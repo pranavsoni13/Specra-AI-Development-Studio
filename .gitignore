@@ -1,0 +1,13 @@
+# Python virtual environments
+.dev/
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

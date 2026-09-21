@@ -1,16 +1,22 @@
 from fastapi import FastAPI
 
+from app.api.routes.planner import router as planner_router
+from app.api.routes.projects import router as projects_router
 from app.api.routes.requirements import router as requirements_router
 
 
 app = FastAPI(
     title="AI Development Studio",
-    description="Multi-Agent AI Software Engineering Platform",
+    description=(
+        "Multi-Agent AI Software Engineering Platform"
+    ),
     version="0.1.0",
 )
 
 
 app.include_router(requirements_router)
+app.include_router(planner_router)
+app.include_router(projects_router)
 
 
 @app.get("/")

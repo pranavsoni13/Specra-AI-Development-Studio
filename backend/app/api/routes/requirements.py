@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.requirement_analyst.agent import RequirementAnalyst
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
+from app.core.errors.exceptions import AgentExecutionError
 
 
 router = APIRouter(
@@ -24,15 +25,13 @@ class RequirementAnalysisRequest(BaseModel):
     "/analyze",
     response_model=RequirementAnalysis,
 )
-async def analyze_requirements(
+def analyze_requirements(
     request: RequirementAnalysisRequest,
 ):
     try:
-        result = requirement_analyst.analyze(
+        return requirement_analyst.analyze(
             request.idea
         )
-
-        return result
 
     except ValueError as exc:
         raise HTTPException(
@@ -40,8 +39,14 @@ async def analyze_requirements(
             detail=str(exc),
         ) from exc
 
-    except RuntimeError as exc:
+    except AgentExecutionError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=str(exc),
+            detail="Unexpected requirement analysis error.",
         ) from exc
