@@ -1,5 +1,6 @@
 from app.core.execution.runner import AgentRunner
 from app.core.llm.client import LocalLLMClient
+from app.core.traceability.requirements import RequirementRegistry
 
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
 
@@ -15,9 +16,8 @@ class ProjectPlanner:
     """
     Project Planner Agent.
 
-    Converts a validated RequirementAnalysis artifact
-    into a validated ProjectPlan using the shared
-    LLM and execution infrastructure.
+    Converts a validated RequirementAnalysis artifact into a validated
+    ProjectPlan using canonical requirement IDs for traceability.
     """
 
     def __init__(
@@ -50,10 +50,13 @@ class ProjectPlanner:
                 "Planner requires a RequirementAnalysis object."
             )
 
-        requirements_json = (
-            requirements.model_dump_json(
-                indent=2
-            )
+        registry = RequirementRegistry.from_analysis(
+            requirements
+        )
+
+        planner_context = self._build_planner_context(
+            requirements,
+            registry,
         )
 
         def execute(
@@ -61,26 +64,29 @@ class ProjectPlanner:
         ) -> ProjectPlan:
 
             user_prompt = USER_PROMPT_TEMPLATE.format(
-                requirements=requirements_json
+                context=planner_context
             )
 
             if previous_error:
                 user_prompt += f"""
 
-The previous ProjectPlan was rejected by the
-quality controller.
+The previous ProjectPlan was rejected by deterministic validation.
 
 Validation feedback:
 {previous_error}
 
-Regenerate the ProjectPlan and correct the problem.
+Regenerate the COMPLETE ProjectPlan.
+
+Correct only the reported validation problems.
 
 Remember:
-- Every milestone must contain at least one requirement_refs entry.
-- Every requirement reference must exactly match a
-  functional requirement.
-- Every milestone must contain at least one task.
-- The plan must contain meaningful milestones.
+- Use canonical requirement IDs only.
+- Every milestone needs requirement_refs.
+- Every task needs requirement_refs.
+- Every task reference must belong to its parent milestone.
+- Every functional requirement must be covered.
+- Do not invent product capabilities.
+- Do not add implementation details that are absent from the requirements.
 """
 
             plan = self.llm_client.generate_structured(
@@ -92,6 +98,64 @@ Remember:
             return self.quality_controller.validate(
                 plan,
                 requirements,
+                registry,
             )
 
-        return self.runner.run(execute)
+        return self.runner.run(
+            execute
+        )
+
+    @staticmethod
+    def _build_planner_context(
+        requirements: RequirementAnalysis,
+        registry: RequirementRegistry,
+    ) -> str:
+
+        sections = [
+            (
+                "PROJECT NAME\n"
+                f"{requirements.project_name}"
+            ),
+            (
+                "OBJECTIVE\n"
+                f"{requirements.objective}"
+            ),
+            (
+                "USER ROLES\n"
+                + (
+                    "\n".join(
+                        f"- {role}"
+                        for role in requirements.user_roles
+                    )
+                    if requirements.user_roles
+                    else "None explicitly identified."
+                )
+            ),
+            registry.to_prompt_text(),
+            (
+                "NON-FUNCTIONAL REQUIREMENTS\n"
+                + (
+                    "\n".join(
+                        f"- {item}"
+                        for item in requirements.non_functional_requirements
+                    )
+                    if requirements.non_functional_requirements
+                    else "None explicitly stated."
+                )
+            ),
+            (
+                "CONSTRAINTS\n"
+                + (
+                    "\n".join(
+                        f"- {item}"
+                        for item in requirements.constraints
+                    )
+                    if requirements.constraints
+                    else "None explicitly stated."
+                )
+            ),
+        ]
+
+        return "\n\n".join(
+            sections
+        )

@@ -1,268 +1,130 @@
 from collections import Counter
-import re
+
+from app.core.traceability.requirements import RequirementRegistry
 
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
 
-from .schemas import Milestone, ProjectPlan
+from .schemas import PlanTask, ProjectPlan
 
 
 class ProjectPlanQualityController:
     """
-    Deterministic quality checks and normalization for ProjectPlan.
+    Deterministic validation and normalization for ProjectPlan.
 
-    Predictable structural and clearly unsupported wording issues are repaired
-    locally so that another expensive LLM generation is not required.
+    This controller validates structure and traceability.
+
+    It does not silently rewrite task descriptions or invent missing
+    project information.
     """
 
     def validate(
         self,
         plan: ProjectPlan,
         requirements: RequirementAnalysis,
+        registry: RequirementRegistry,
     ) -> ProjectPlan:
 
-        self._check_project_name(plan)
-
-        self._normalize_empty_milestones(
+        self._check_project_name(
             plan,
             requirements,
         )
 
-        self._normalize_unsupported_language(
+        self._normalize_requirement_references(
             plan,
-            requirements,
+            registry,
         )
 
-        self._check_milestones(plan)
-
-        self._check_duplicate_milestones(plan)
-
-        self._check_tasks(plan)
-
-        self._check_requirement_references(
+        self._check_milestones(
             plan,
-            requirements,
         )
 
-        self._set_development_sequence(plan)
+        self._check_duplicate_milestones(
+            plan,
+        )
+
+        self._check_tasks(
+            plan,
+        )
+
+        self._check_requirement_coverage(
+            plan,
+            registry,
+        )
+
+        self._check_task_traceability(
+            plan,
+            registry,
+        )
+
+        self._set_development_sequence(
+            plan,
+        )
 
         return plan
 
     @staticmethod
     def _check_project_name(
         plan: ProjectPlan,
+        requirements: RequirementAnalysis,
     ) -> None:
-        if not plan.project_name.strip():
+
+        if plan.project_name.strip().casefold() != (
+            requirements.project_name.strip().casefold()
+        ):
             raise ValueError(
-                "Project name cannot be empty."
+                "ProjectPlan project_name does not match "
+                "RequirementAnalysis project_name."
             )
 
     @staticmethod
-    def _normalize_empty_milestones(
+    def _normalize_requirement_references(
         plan: ProjectPlan,
-        requirements: RequirementAnalysis,
+        registry: RequirementRegistry,
     ) -> None:
         """
-        Create a minimal traceable fallback plan when the LLM returns an empty
-        milestones list.
+        Normalize both legacy text references and canonical IDs.
+
+        No semantic rewriting is performed.
+
+        A reference either resolves to one known requirement or validation
+        fails.
         """
-        if plan.milestones:
-            return
-
-        functional_requirements = [
-            requirement.strip()
-            for requirement in requirements.functional_requirements
-            if requirement.strip()
-        ]
-
-        if not functional_requirements:
-            return
-
-        generated_milestones: list[Milestone] = []
-
-        for requirement in functional_requirements:
-            milestone_name = (
-                ProjectPlanQualityController
-                ._milestone_name_from_requirement(
-                    requirement
-                )
-            )
-
-            generated_milestones.append(
-                Milestone(
-                    name=milestone_name,
-                    description=requirement,
-                    requirement_refs=[requirement],
-                    tasks=[
-                        "Define the work required to satisfy this requirement"
-                    ],
-                )
-            )
-
-        plan.milestones = generated_milestones
-
-    @staticmethod
-    def _milestone_name_from_requirement(
-        requirement: str,
-    ) -> str:
-        cleaned = requirement.strip().rstrip(".")
-
-        prefixes = (
-            "Customers can ",
-            "Customer can ",
-            "Users can ",
-            "User can ",
-            "The system can ",
-            "System can ",
-        )
-
-        for prefix in prefixes:
-            if cleaned.casefold().startswith(
-                prefix.casefold()
-            ):
-                cleaned = cleaned[len(prefix):]
-                break
-
-        cleaned = cleaned.strip()
-
-        if not cleaned:
-            return "Development Milestone"
-
-        return cleaned[:1].upper() + cleaned[1:]
-
-    @staticmethod
-    def _normalize_unsupported_language(
-        plan: ProjectPlan,
-        requirements: RequirementAnalysis,
-    ) -> None:
-        """
-        Remove clearly unsupported behavior qualifiers or provider-specific
-        language when the RequirementAnalysis does not contain them.
-
-        This intentionally handles only obvious, high-confidence cases.
-        It does not attempt full semantic interpretation.
-        """
-
-        requirement_text = " ".join(
-            requirement.strip().casefold()
-            for requirement in requirements.functional_requirements
-        )
-
-        allows_realtime = (
-            "real-time" in requirement_text
-            or "real time" in requirement_text
-            or "realtime" in requirement_text
-        )
 
         for milestone in plan.milestones:
-            milestone.description = (
-                ProjectPlanQualityController
-                ._normalize_text(
-                    milestone.description,
-                    allows_realtime=allows_realtime,
-                    requirement_text=requirement_text,
+
+            milestone.requirement_refs = (
+                registry.normalize_references(
+                    milestone.requirement_refs
                 )
             )
 
-            milestone.tasks = [
-                ProjectPlanQualityController
-                ._normalize_text(
-                    task,
-                    allows_realtime=allows_realtime,
-                    requirement_text=requirement_text,
+            normalized_tasks: list[PlanTask] = []
+
+            for task in milestone.tasks:
+                task.requirement_refs = (
+                    registry.normalize_references(
+                        task.requirement_refs
+                    )
                 )
-                for task in milestone.tasks
-            ]
 
-        plan.dependencies = [
-            ProjectPlanQualityController
-            ._normalize_text(
-                dependency,
-                allows_realtime=allows_realtime,
-                requirement_text=requirement_text,
-            )
-            for dependency in plan.dependencies
-        ]
+                normalized_tasks.append(
+                    task
+                )
 
-    @staticmethod
-    def _normalize_text(
-        text: str,
-        *,
-        allows_realtime: bool,
-        requirement_text: str,
-    ) -> str:
-        normalized = text.strip()
-
-        if not allows_realtime:
-            normalized = re.sub(
-                r"\breal[- ]time\b\s*",
-                "",
-                normalized,
-                flags=re.IGNORECASE,
-            )
-
-            normalized = re.sub(
-                r"\brealtime\b\s*",
-                "",
-                normalized,
-                flags=re.IGNORECASE,
-            )
-
-        # High-confidence correction for an implementation-oriented
-        # payment phrase that the planner should not introduce.
-        if (
-            "secure payment integration" not in requirement_text
-            and normalized.casefold().strip()
-            == "develop secure payment integration"
-        ):
-            normalized = "Develop payment processing workflow"
-
-        # Remove accidental provider-specific planning terms unless the
-        # requirement itself explicitly names the provider.
-        providers = (
-            "stripe",
-            "paypal",
-            "razorpay",
-            "firebase",
-            "twilio",
-            "google maps",
-        )
-
-        for provider in providers:
-            if provider in requirement_text:
-                continue
-
-            normalized = re.sub(
-                rf"\b{re.escape(provider)}\b",
-                "external service",
-                normalized,
-                flags=re.IGNORECASE,
-            )
-
-        # Clean up spacing caused by removing "real-time".
-        normalized = re.sub(
-            r"\s{2,}",
-            " ",
-            normalized,
-        )
-
-        normalized = re.sub(
-            r"\s+([,.;:])",
-            r"\1",
-            normalized,
-        )
-
-        return normalized.strip()
+            milestone.tasks = normalized_tasks
 
     @staticmethod
     def _check_milestones(
         plan: ProjectPlan,
     ) -> None:
+
         if not plan.milestones:
             raise ValueError(
                 "Project plan must contain at least one milestone."
             )
 
         for milestone in plan.milestones:
+
             if not milestone.name.strip():
                 raise ValueError(
                     "Milestone name cannot be empty."
@@ -270,54 +132,71 @@ class ProjectPlanQualityController:
 
             if not milestone.description.strip():
                 raise ValueError(
-                    f"Milestone '{milestone.name}' has no description."
+                    f"Milestone '{milestone.name}' "
+                    "has no description."
                 )
 
             if not milestone.requirement_refs:
                 raise ValueError(
-                    f"Milestone '{milestone.name}' has no requirement "
-                    "references."
+                    f"Milestone '{milestone.name}' "
+                    "has no requirement references."
                 )
 
             if not milestone.tasks:
                 raise ValueError(
-                    f"Milestone '{milestone.name}' has no tasks."
+                    f"Milestone '{milestone.name}' "
+                    "has no tasks."
                 )
 
     @staticmethod
     def _check_duplicate_milestones(
         plan: ProjectPlan,
     ) -> None:
+
         names = [
-            milestone.name.strip().lower()
+            milestone.name.strip().casefold()
             for milestone in plan.milestones
         ]
 
         duplicates = [
             name
-            for name, count in Counter(names).items()
+            for name, count in Counter(
+                names
+            ).items()
             if count > 1
         ]
 
         if duplicates:
             raise ValueError(
-                f"Duplicate milestones found: {duplicates}"
+                f"Duplicate milestones found: "
+                f"{duplicates}"
             )
 
     @staticmethod
     def _check_tasks(
         plan: ProjectPlan,
     ) -> None:
+
         for milestone in plan.milestones:
-            normalized_tasks = [
-                task.strip().lower()
+
+            task_descriptions = [
+                task.description.strip().casefold()
                 for task in milestone.tasks
             ]
 
+            if any(
+                not task.description.strip()
+                for task in milestone.tasks
+            ):
+                raise ValueError(
+                    f"Milestone '{milestone.name}' "
+                    "contains an empty task."
+                )
+
             duplicates = [
-                task
-                for task, count in Counter(
-                    normalized_tasks
+                description
+                for description, count in Counter(
+                    task_descriptions
                 ).items()
                 if count > 1
             ]
@@ -325,31 +204,105 @@ class ProjectPlanQualityController:
             if duplicates:
                 raise ValueError(
                     f"Duplicate tasks found in "
-                    f"'{milestone.name}': {duplicates}"
+                    f"'{milestone.name}': "
+                    f"{duplicates}"
                 )
 
     @staticmethod
-    def _check_requirement_references(
+    def _check_requirement_coverage(
         plan: ProjectPlan,
-        requirements: RequirementAnalysis,
+        registry: RequirementRegistry,
     ) -> None:
-        valid_requirements = {
-            requirement.strip()
-            for requirement in requirements.functional_requirements
+
+        covered_ids = {
+            reference
+            for milestone in plan.milestones
+            for reference in milestone.requirement_refs
         }
 
+        required_ids = set(
+            registry.ids
+        )
+
+        missing_ids = (
+            required_ids - covered_ids
+        )
+
+        if missing_ids:
+            missing_details = [
+                (
+                    f"{requirement_id}: "
+                    f"{registry.text_for_id(requirement_id)}"
+                )
+                for requirement_id in sorted(
+                    missing_ids
+                )
+            ]
+
+            raise ValueError(
+                "Project plan does not cover all functional "
+                "requirements. Missing: "
+                f"{missing_details}"
+            )
+
+    @staticmethod
+    def _check_task_traceability(
+        plan: ProjectPlan,
+        registry: RequirementRegistry,
+    ) -> None:
+
+        valid_ids = set(
+            registry.ids
+        )
+
         for milestone in plan.milestones:
-            for reference in milestone.requirement_refs:
-                if reference.strip() not in valid_requirements:
+
+            milestone_ids = set(
+                milestone.requirement_refs
+            )
+
+            for task in milestone.tasks:
+
+                task_ids = set(
+                    task.requirement_refs
+                )
+
+                unknown_ids = (
+                    task_ids - valid_ids
+                )
+
+                if unknown_ids:
                     raise ValueError(
-                        f"Invalid requirement reference in "
-                        f"'{milestone.name}': {reference}"
+                        f"Task '{task.description}' in milestone "
+                        f"'{milestone.name}' references unknown "
+                        f"requirements: "
+                        f"{sorted(unknown_ids)}"
+                    )
+
+                outside_milestone = (
+                    task_ids - milestone_ids
+                )
+
+                if outside_milestone:
+                    raise ValueError(
+                        f"Task '{task.description}' in milestone "
+                        f"'{milestone.name}' references requirements "
+                        f"outside the milestone scope: "
+                        f"{sorted(outside_milestone)}"
+                    )
+
+                if not task_ids:
+                    raise ValueError(
+                        f"Task '{task.description}' in milestone "
+                        f"'{milestone.name}' has no requirement "
+                        "references."
                     )
 
     @staticmethod
     def _set_development_sequence(
         plan: ProjectPlan,
     ) -> None:
+
         plan.development_sequence = [
             milestone.name
             for milestone in plan.milestones

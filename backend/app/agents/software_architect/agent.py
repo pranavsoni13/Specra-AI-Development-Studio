@@ -1,5 +1,6 @@
 from app.core.execution.runner import AgentRunner
 from app.core.llm.client import LocalLLMClient
+from app.core.traceability.requirements import RequirementRegistry
 
 from app.agents.project_planner.schemas import ProjectPlan
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
@@ -16,8 +17,8 @@ class SoftwareArchitect:
     """
     Software Architect Agent.
 
-    Converts validated requirements and a project plan
-    into a validated system architecture.
+    Converts validated requirements and a project plan into a traceable,
+    validated system architecture.
     """
 
     def __init__(
@@ -25,8 +26,6 @@ class SoftwareArchitect:
         model_name: str = MODEL_NAME,
         max_attempts: int = 2,
     ):
-        # Architecture generation does not need unlimited output.
-        # Keeping the generation bounded is important for CPU inference.
         self.llm_client = LocalLLMClient(
             model_name=model_name,
             num_predict=2400,
@@ -61,55 +60,44 @@ class SoftwareArchitect:
                 "Architect requires a ProjectPlan object."
             )
 
-        # Compact JSON reduces unnecessary prompt tokens compared
-        # with model_dump_json(indent=2).
-        requirements_json = requirements.model_dump_json()
-        project_plan_json = project_plan.model_dump_json()
-
-        # Build the base prompt only once.
-        base_user_prompt = USER_PROMPT_TEMPLATE.format(
-            requirements=requirements_json,
-            project_plan=project_plan_json,
+        registry = RequirementRegistry.from_analysis(
+            requirements
         )
 
-        # Explicitly discourage verbose generation.
-        base_user_prompt += """
-
-ARCHITECTURE OUTPUT EFFICIENCY RULES:
-- Return only the information required by the SystemArchitecture schema.
-- Keep descriptions concise and technically specific.
-- Do not add explanations, commentary, or prose outside the schema.
-- Do not repeat the same information across multiple fields.
-- Keep lists focused on the requirements and plan.
-- Do not invent requirements, features, integrations, or behavior.
-"""
+        architecture_context = self._build_architecture_context(
+            requirements,
+            project_plan,
+            registry,
+        )
 
         def execute(
             previous_error: str | None,
         ) -> SystemArchitecture:
 
-            user_prompt = base_user_prompt
+            user_prompt = USER_PROMPT_TEMPLATE.format(
+                context=architecture_context
+            )
 
             if previous_error:
                 user_prompt += f"""
 
-The previous architecture was rejected.
+The previous SystemArchitecture was rejected by deterministic validation.
 
 Validation feedback:
 {previous_error}
 
 Regenerate the COMPLETE SystemArchitecture.
 
-Make sure:
-- Every component references a valid functional requirement.
-- Every API capability references a valid functional requirement.
-- data_flow is not empty.
-- architecture_decisions is not empty.
-- If the architecture mentions an external service, add it to external_integrations.
-- Do not invent user requirements.
-- Do not invent real-time behavior.
-- Keep architecture_style consistent with the actual architecture.
-- Keep the regenerated architecture concise.
+Correct the reported validation problem while preserving traceability.
+
+Remember:
+- RequirementAnalysis is authoritative.
+- Use canonical requirement IDs only.
+- Every component needs related_requirements.
+- Every API capability needs related_requirements.
+- Every architecture decision needs related_requirements.
+- Do not introduce unsupported product behavior.
+- Keep the architecture concise.
 """
 
             architecture = self.llm_client.generate_structured(
@@ -122,6 +110,97 @@ Make sure:
                 architecture,
                 requirements,
                 project_plan,
+                registry,
             )
 
-        return self.runner.run(execute)
+        return self.runner.run(
+            execute
+        )
+
+    @staticmethod
+    def _build_architecture_context(
+        requirements: RequirementAnalysis,
+        project_plan: ProjectPlan,
+        registry: RequirementRegistry,
+    ) -> str:
+
+        requirement_section = registry.to_prompt_text()
+
+        user_roles_section = (
+            "\n".join(
+                f"- {role}"
+                for role in requirements.user_roles
+            )
+            if requirements.user_roles
+            else "None explicitly identified."
+        )
+
+        plan_lines = [
+            "PROJECT PLAN",
+            "------------",
+        ]
+
+        for index, milestone in enumerate(
+            project_plan.milestones,
+            start=1,
+        ):
+            plan_lines.append(
+                f"MILESTONE M-{index:03d}: "
+                f"{milestone.name}"
+            )
+
+            plan_lines.append(
+                f"DESCRIPTION: "
+                f"{milestone.description}"
+            )
+
+            plan_lines.append(
+                "REQUIREMENT REFS: "
+                + ", ".join(
+                    milestone.requirement_refs
+                )
+            )
+
+            for task in milestone.tasks:
+                plan_lines.append(
+                    f"TASK: [{', '.join(task.requirement_refs)}] "
+                    f"{task.description}"
+                )
+
+        if project_plan.dependencies:
+            plan_lines.append(
+                "DEPENDENCIES:"
+            )
+
+            for dependency in project_plan.dependencies:
+                plan_lines.append(
+                    f"- {dependency}"
+                )
+
+        plan_lines.append(
+            "DEVELOPMENT SEQUENCE: "
+            + " -> ".join(
+                project_plan.development_sequence
+            )
+        )
+
+        return "\n\n".join(
+            [
+                (
+                    "PROJECT NAME\n"
+                    f"{requirements.project_name}"
+                ),
+                (
+                    "OBJECTIVE\n"
+                    f"{requirements.objective}"
+                ),
+                (
+                    "USER ROLES\n"
+                    f"{user_roles_section}"
+                ),
+                requirement_section,
+                "\n".join(
+                    plan_lines
+                ),
+            ]
+        )

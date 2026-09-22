@@ -3,77 +3,99 @@ from pydantic import BaseModel, Field
 
 class ArchitectureComponent(BaseModel):
     name: str = Field(
-        description="Name of a major logical system component or module"
+        min_length=1,
+        description="Name of a major logical system component or module",
     )
 
     responsibility: str = Field(
-        description="Primary responsibility of the component"
+        min_length=1,
+        description="Primary responsibility of the component",
     )
 
     related_requirements: list[str] = Field(
         min_length=1,
         description=(
-            "Exact functional requirements addressed by this component"
+            "Canonical functional requirement IDs addressed by this "
+            "component, such as FR-001"
         ),
     )
 
 
 class APIEndpoint(BaseModel):
     name: str = Field(
-        description="Logical name of an API capability"
+        min_length=1,
+        description="Logical name of an API capability",
     )
 
     purpose: str = Field(
-        description="Purpose of the API capability"
+        min_length=1,
+        description="Purpose of the API capability",
     )
 
     related_requirements: list[str] = Field(
         min_length=1,
         description=(
-            "Exact functional requirements addressed by this API capability"
+            "Canonical functional requirement IDs addressed by this "
+            "API capability, such as FR-001"
         ),
     )
 
 
 class ArchitectureDecision(BaseModel):
     decision: str = Field(
-        description="A major technical architecture decision"
+        min_length=1,
+        description="A major technical architecture decision",
     )
 
     rationale: str = Field(
-        description="Why the decision is appropriate for the requirements"
+        min_length=1,
+        description="Why the decision is appropriate for the requirements",
+    )
+
+    related_requirements: list[str] = Field(
+        min_length=1,
+        description=(
+            "Canonical functional requirement IDs that justify or are "
+            "affected by this architecture decision"
+        ),
     )
 
 
 class SystemArchitecture(BaseModel):
     project_name: str = Field(
-        description="Name of the project"
+        min_length=1,
+        description="Name of the project",
     )
 
     architecture_style: str = Field(
-        description="Recommended high-level architecture style"
+        min_length=1,
+        description="Recommended high-level architecture style",
     )
 
     frontend: str = Field(
-        description="Recommended frontend technology or approach"
+        min_length=1,
+        description="Recommended frontend technology or approach",
     )
 
     backend: str = Field(
-        description="Recommended backend technology or approach"
+        min_length=1,
+        description="Recommended backend technology or approach",
     )
 
     database: str = Field(
+        min_length=1,
         description=(
             "Recommended database technology or "
             "'Not required based on current requirements'"
-        )
+        ),
     )
 
     authentication: str = Field(
+        min_length=1,
         description=(
             "Recommended authentication approach or "
             "'Not required based on current requirements'"
-        )
+        ),
     )
 
     components: list[ArchitectureComponent] = Field(
@@ -111,6 +133,7 @@ class SystemArchitecture(BaseModel):
     architecture_decisions: list[ArchitectureDecision] = Field(
         min_length=1,
         description=(
-            "Important architecture decisions and their rationale"
+            "Important architecture decisions, their rationale, and the "
+            "functional requirements they support"
         ),
     )

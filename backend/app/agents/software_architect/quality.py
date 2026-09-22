@@ -1,5 +1,7 @@
 from collections import Counter
 
+from app.core.traceability.requirements import RequirementRegistry
+
 from app.agents.project_planner.schemas import ProjectPlan
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
 
@@ -9,6 +11,11 @@ from .schemas import SystemArchitecture
 class ArchitectureQualityController:
     """
     Deterministic validation and normalization for SystemArchitecture.
+
+    This controller validates structure, traceability, coverage, and
+    cross-field consistency.
+
+    It does not invent requirements or silently rewrite architectural text.
     """
 
     def validate(
@@ -16,11 +23,17 @@ class ArchitectureQualityController:
         architecture: SystemArchitecture,
         requirements: RequirementAnalysis,
         project_plan: ProjectPlan,
+        registry: RequirementRegistry,
     ) -> SystemArchitecture:
 
         self._check_project_name(
             architecture,
             requirements,
+        )
+
+        self._normalize_requirement_references(
+            architecture,
+            registry,
         )
 
         self._check_required_fields(
@@ -29,21 +42,26 @@ class ArchitectureQualityController:
 
         self._check_component_references(
             architecture,
-            requirements,
+            registry,
         )
 
         self._check_api_references(
             architecture,
-            requirements,
+            registry,
+        )
+
+        self._check_decision_references(
+            architecture,
+            registry,
+        )
+
+        self._check_component_coverage(
+            architecture,
+            registry,
         )
 
         self._check_duplicates(
             architecture,
-        )
-
-        self._normalize_unsupported_behavior(
-            architecture,
-            requirements,
         )
 
         self._normalize_external_integrations(
@@ -52,6 +70,11 @@ class ArchitectureQualityController:
 
         self._check_external_integrations(
             architecture,
+        )
+
+        self._check_unsupported_realtime_behavior(
+            architecture,
+            requirements,
         )
 
         self._check_architecture_consistency(
@@ -65,6 +88,7 @@ class ArchitectureQualityController:
         architecture: SystemArchitecture,
         requirements: RequirementAnalysis,
     ) -> None:
+
         if architecture.project_name.strip().casefold() != (
             requirements.project_name.strip().casefold()
         ):
@@ -74,9 +98,42 @@ class ArchitectureQualityController:
             )
 
     @staticmethod
+    def _normalize_requirement_references(
+        architecture: SystemArchitecture,
+        registry: RequirementRegistry,
+    ) -> None:
+        """
+        Convert legacy exact-text references into canonical IDs.
+
+        No semantic rewriting is performed.
+        """
+
+        for component in architecture.components:
+            component.related_requirements = (
+                registry.normalize_references(
+                    component.related_requirements
+                )
+            )
+
+        for endpoint in architecture.api_endpoints:
+            endpoint.related_requirements = (
+                registry.normalize_references(
+                    endpoint.related_requirements
+                )
+            )
+
+        for decision in architecture.architecture_decisions:
+            decision.related_requirements = (
+                registry.normalize_references(
+                    decision.related_requirements
+                )
+            )
+
+    @staticmethod
     def _check_required_fields(
         architecture: SystemArchitecture,
     ) -> None:
+
         required_fields = {
             "architecture_style": architecture.architecture_style,
             "frontend": architecture.frontend,
@@ -86,7 +143,7 @@ class ArchitectureQualityController:
         }
 
         for field_name, value in required_fields.items():
-            if not value or not value.strip():
+            if not value.strip():
                 raise ValueError(
                     f"Architecture field '{field_name}' cannot be empty."
                 )
@@ -109,14 +166,15 @@ class ArchitectureQualityController:
     @staticmethod
     def _check_component_references(
         architecture: SystemArchitecture,
-        requirements: RequirementAnalysis,
+        registry: RequirementRegistry,
     ) -> None:
-        valid_requirements = {
-            requirement.strip()
-            for requirement in requirements.functional_requirements
-        }
+
+        valid_ids = set(
+            registry.ids
+        )
 
         for component in architecture.components:
+
             if not component.name.strip():
                 raise ValueError(
                     "Architecture component name cannot be empty."
@@ -134,24 +192,30 @@ class ArchitectureQualityController:
                     "must reference at least one requirement."
                 )
 
-            for reference in component.related_requirements:
-                if reference.strip() not in valid_requirements:
-                    raise ValueError(
-                        f"Invalid requirement reference in component "
-                        f"'{component.name}': {reference}"
-                    )
+            unknown_ids = (
+                set(component.related_requirements)
+                - valid_ids
+            )
+
+            if unknown_ids:
+                raise ValueError(
+                    f"Architecture component '{component.name}' "
+                    f"references unknown requirements: "
+                    f"{sorted(unknown_ids)}"
+                )
 
     @staticmethod
     def _check_api_references(
         architecture: SystemArchitecture,
-        requirements: RequirementAnalysis,
+        registry: RequirementRegistry,
     ) -> None:
-        valid_requirements = {
-            requirement.strip()
-            for requirement in requirements.functional_requirements
-        }
+
+        valid_ids = set(
+            registry.ids
+        )
 
         for endpoint in architecture.api_endpoints:
+
             if not endpoint.name.strip():
                 raise ValueError(
                     "API capability name cannot be empty."
@@ -169,17 +233,101 @@ class ArchitectureQualityController:
                     "must reference at least one requirement."
                 )
 
-            for reference in endpoint.related_requirements:
-                if reference.strip() not in valid_requirements:
-                    raise ValueError(
-                        f"Invalid requirement reference in API capability "
-                        f"'{endpoint.name}': {reference}"
-                    )
+            unknown_ids = (
+                set(endpoint.related_requirements)
+                - valid_ids
+            )
+
+            if unknown_ids:
+                raise ValueError(
+                    f"API capability '{endpoint.name}' "
+                    f"references unknown requirements: "
+                    f"{sorted(unknown_ids)}"
+                )
+
+    @staticmethod
+    def _check_decision_references(
+        architecture: SystemArchitecture,
+        registry: RequirementRegistry,
+    ) -> None:
+
+        valid_ids = set(
+            registry.ids
+        )
+
+        for decision in architecture.architecture_decisions:
+
+            if not decision.decision.strip():
+                raise ValueError(
+                    "Architecture decision cannot be empty."
+                )
+
+            if not decision.rationale.strip():
+                raise ValueError(
+                    f"Architecture decision '{decision.decision}' "
+                    "must have a rationale."
+                )
+
+            if not decision.related_requirements:
+                raise ValueError(
+                    f"Architecture decision '{decision.decision}' "
+                    "must reference at least one requirement."
+                )
+
+            unknown_ids = (
+                set(decision.related_requirements)
+                - valid_ids
+            )
+
+            if unknown_ids:
+                raise ValueError(
+                    f"Architecture decision '{decision.decision}' "
+                    f"references unknown requirements: "
+                    f"{sorted(unknown_ids)}"
+                )
+
+    @staticmethod
+    def _check_component_coverage(
+        architecture: SystemArchitecture,
+        registry: RequirementRegistry,
+    ) -> None:
+
+        covered_ids = {
+            requirement_id
+            for component in architecture.components
+            for requirement_id in component.related_requirements
+        }
+
+        required_ids = set(
+            registry.ids
+        )
+
+        missing_ids = (
+            required_ids - covered_ids
+        )
+
+        if missing_ids:
+            missing_details = [
+                (
+                    f"{requirement_id}: "
+                    f"{registry.text_for_id(requirement_id)}"
+                )
+                for requirement_id in sorted(
+                    missing_ids
+                )
+            ]
+
+            raise ValueError(
+                "System architecture does not contain a component "
+                "covering every functional requirement. Missing: "
+                f"{missing_details}"
+            )
 
     @staticmethod
     def _check_duplicates(
         architecture: SystemArchitecture,
     ) -> None:
+
         component_names = [
             component.name.strip().casefold()
             for component in architecture.components
@@ -187,13 +335,15 @@ class ArchitectureQualityController:
 
         duplicate_components = [
             name
-            for name, count in Counter(component_names).items()
+            for name, count in Counter(
+                component_names
+            ).items()
             if count > 1
         ]
 
         if duplicate_components:
             raise ValueError(
-                f"Duplicate architecture components found: "
+                "Duplicate architecture components found: "
                 f"{duplicate_components}"
             )
 
@@ -204,13 +354,15 @@ class ArchitectureQualityController:
 
         duplicate_endpoints = [
             name
-            for name, count in Counter(endpoint_names).items()
+            for name, count in Counter(
+                endpoint_names
+            ).items()
             if count > 1
         ]
 
         if duplicate_endpoints:
             raise ValueError(
-                f"Duplicate API capabilities found: "
+                "Duplicate API capabilities found: "
                 f"{duplicate_endpoints}"
             )
 
@@ -218,13 +370,7 @@ class ArchitectureQualityController:
     def _build_external_context(
         architecture: SystemArchitecture,
     ) -> str:
-        """
-        Build text used specifically for external-integration detection.
 
-        Authentication is intentionally excluded because a valid value such as
-        "Not required based on current requirements" must not suppress detection
-        of a real external integration elsewhere in the architecture.
-        """
         return " ".join(
             [
                 architecture.frontend,
@@ -247,112 +393,20 @@ class ArchitectureQualityController:
             ]
         ).casefold()
 
-    @staticmethod
-    def _normalize_unsupported_behavior(
-        architecture: SystemArchitecture,
-        requirements: RequirementAnalysis,
-    ) -> None:
-        """
-        Remove clearly unsupported real-time behavior when the original
-        requirements do not contain real-time behavior.
-        """
-        requirement_text = " ".join(
-            requirement.strip().casefold()
-            for requirement in requirements.functional_requirements
-        )
-
-        allows_realtime = (
-            "real-time" in requirement_text
-            or "real time" in requirement_text
-            or "realtime" in requirement_text
-        )
-
-        if allows_realtime:
-            return
-
-        architecture.data_flow = [
-            ArchitectureQualityController._remove_realtime(
-                value
-            )
-            for value in architecture.data_flow
-        ]
-
-        architecture.architectural_assumptions = [
-            ArchitectureQualityController._remove_realtime(
-                value
-            )
-            for value in architecture.architectural_assumptions
-        ]
-
-        architecture.components = [
-            component.model_copy(
-                update={
-                    "name": ArchitectureQualityController._remove_realtime(
-                        component.name
-                    ),
-                    "responsibility": (
-                        ArchitectureQualityController._remove_realtime(
-                            component.responsibility
-                        )
-                    ),
-                }
-            )
-            for component in architecture.components
-        ]
-
-        architecture.architecture_decisions = [
-            decision.model_copy(
-                update={
-                    "decision": ArchitectureQualityController._remove_realtime(
-                        decision.decision
-                    ),
-                    "rationale": (
-                        ArchitectureQualityController._remove_realtime(
-                            decision.rationale
-                        )
-                    ),
-                }
-            )
-            for decision in architecture.architecture_decisions
-        ]
-
-    @staticmethod
-    def _remove_realtime(
-        value: str,
-    ) -> str:
-        import re
-
-        value = re.sub(
-            r"\breal[- ]time\b\s*",
-            "",
-            value,
-            flags=re.IGNORECASE,
-        )
-
-        value = re.sub(
-            r"\brealtime\b\s*",
-            "",
-            value,
-            flags=re.IGNORECASE,
-        )
-
-        value = re.sub(
-            r"\s{2,}",
-            " ",
-            value,
-        )
-
-        return value.strip()
-
     @classmethod
     def _normalize_external_integrations(
         cls,
         architecture: SystemArchitecture,
     ) -> None:
         """
-        Repair deterministic integration mismatches without triggering another
-        full LLM generation.
+        Perform only safe field synchronization.
+
+        If the generated architecture already explicitly states an external
+        service, copy that same concept into external_integrations.
+
+        This is not semantic invention.
         """
+
         if architecture.external_integrations:
             return
 
@@ -360,83 +414,57 @@ class ArchitectureQualityController:
             architecture
         )
 
-        payment_indicators = (
-            "payment gateway",
-            "external payment service",
-            "external payment processing service",
-            "third-party payment",
+        exact_integrations = (
+            (
+                "external payment processing service",
+                "External payment processing service",
+            ),
+            (
+                "external payment service",
+                "External payment processing service",
+            ),
+            (
+                "payment gateway",
+                "Payment gateway",
+            ),
+            (
+                "third-party payment",
+                "Third-party payment service",
+            ),
+            (
+                "third-party service",
+                "External third-party service",
+            ),
+            (
+                "external service",
+                "External service",
+            ),
         )
 
-        generic_external_indicators = (
-            "external service",
-            "third-party service",
-        )
-
-        negative_external_phrases = (
-            "no external service",
-            "no external payment service",
-            "no payment gateway",
-            "without an external service",
-            "without external service",
-            "does not require an external service",
-            "does not require external service",
-            "does not require a payment gateway",
-            "does not use an external service",
-            "does not use external service",
-        )
-
-        if any(
-            phrase in text
-            for phrase in negative_external_phrases
-        ):
-            return
-
-        if any(
-            indicator in text
-            for indicator in payment_indicators
-        ):
-            architecture.external_integrations.append(
-                "External payment processing service"
-            )
-            return
-
-        if any(
-            indicator in text
-            for indicator in generic_external_indicators
-        ):
-            architecture.external_integrations.append(
-                "External third-party service"
-            )
+        for phrase, normalized_value in exact_integrations:
+            if phrase in text:
+                architecture.external_integrations.append(
+                    normalized_value
+                )
+                return
 
     @classmethod
     def _check_external_integrations(
         cls,
         architecture: SystemArchitecture,
     ) -> None:
+
         text = cls._build_external_context(
             architecture
         )
 
         integration_keywords = (
-            "external payment service",
             "external payment processing service",
+            "external payment service",
             "payment gateway",
             "third-party payment",
-            "external service",
             "third-party service",
-        )
-
-        negative_external_phrases = (
-            "no external service",
-            "no external payment service",
-            "no payment gateway",
-            "without an external service",
-            "without external service",
-            "does not require an external service",
-            "does not require external service",
-            "does not require a payment gateway",
-            "does not use an external service",
-            "does not use external service",
+            "external service",
         )
 
         mentions_external = any(
@@ -444,25 +472,77 @@ class ArchitectureQualityController:
             for keyword in integration_keywords
         )
 
-        explicitly_not_external = any(
-            phrase in text
-            for phrase in negative_external_phrases
-        )
-
         if (
             mentions_external
-            and not explicitly_not_external
             and not architecture.external_integrations
         ):
             raise ValueError(
-                "Architecture contains a confirmed external integration "
+                "Architecture contains an external integration "
                 "but external_integrations is empty."
+            )
+
+    @staticmethod
+    def _check_unsupported_realtime_behavior(
+        architecture: SystemArchitecture,
+        requirements: RequirementAnalysis,
+    ) -> None:
+
+        requirement_text = " ".join(
+            requirements.functional_requirements
+        ).casefold()
+
+        requires_realtime = (
+            "real-time" in requirement_text
+            or "real time" in requirement_text
+            or "realtime" in requirement_text
+        )
+
+        if requires_realtime:
+            return
+
+        architecture_text = " ".join(
+            [
+                *architecture.data_flow,
+                *architecture.architectural_assumptions,
+                *[
+                    component.responsibility
+                    for component in architecture.components
+                ],
+                *[
+                    decision.decision
+                    for decision in architecture.architecture_decisions
+                ],
+                *[
+                    decision.rationale
+                    for decision in architecture.architecture_decisions
+                ],
+            ]
+        ).casefold()
+
+        realtime_terms = (
+            "real-time",
+            "real time",
+            "realtime",
+        )
+
+        detected = [
+            term
+            for term in realtime_terms
+            if term in architecture_text
+        ]
+
+        if detected:
+            raise ValueError(
+                "Architecture introduces real-time behavior that is not "
+                "present in the authoritative functional requirements: "
+                f"{detected}"
             )
 
     @staticmethod
     def _check_architecture_consistency(
         architecture: SystemArchitecture,
     ) -> None:
+
         style = architecture.architecture_style.casefold()
 
         component_text = " ".join(
