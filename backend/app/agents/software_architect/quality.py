@@ -1,5 +1,3 @@
-from collections import Counter
-
 from app.core.traceability.requirements import RequirementRegistry
 
 from app.agents.project_planner.schemas import ProjectPlan
@@ -10,12 +8,15 @@ from .schemas import SystemArchitecture
 
 class ArchitectureQualityController:
     """
-    Deterministic validation and normalization for SystemArchitecture.
+    Deterministic validation for architecture artifacts.
 
-    This controller validates structure, traceability, coverage, and
-    cross-field consistency.
+    This layer validates:
+    - structural correctness
+    - requirement traceability
+    - cross-field consistency
+    - unsupported capability introduction
 
-    It does not invent requirements or silently rewrite architectural text.
+    It does not rewrite semantic model output.
     """
 
     def validate(
@@ -26,237 +27,187 @@ class ArchitectureQualityController:
         registry: RequirementRegistry,
     ) -> SystemArchitecture:
 
-        self._check_project_name(
-            architecture,
-            requirements,
+        if not isinstance(architecture, SystemArchitecture):
+            raise TypeError(
+                "architecture must be an instance of SystemArchitecture."
+            )
+
+        if not isinstance(requirements, RequirementAnalysis):
+            raise TypeError(
+                "requirements must be an instance of RequirementAnalysis."
+            )
+
+        if not isinstance(project_plan, ProjectPlan):
+            raise TypeError(
+                "project_plan must be an instance of ProjectPlan."
+            )
+
+        self._validate_project_name(
+            architecture=architecture,
+            requirements=requirements,
         )
 
         self._normalize_requirement_references(
-            architecture,
-            registry,
+            architecture=architecture,
+            registry=registry,
         )
 
-        self._check_required_fields(
-            architecture,
-        )
-
-        self._check_component_references(
-            architecture,
-            registry,
-        )
-
-        self._check_api_references(
-            architecture,
-            registry,
-        )
-
-        self._check_decision_references(
-            architecture,
-            registry,
-        )
+        self._validate_components(architecture)
+        self._validate_api_endpoints(architecture)
+        self._validate_architecture_decisions(architecture)
 
         self._check_component_coverage(
-            architecture,
-            registry,
+            architecture=architecture,
+            registry=registry,
         )
 
-        self._check_duplicates(
-            architecture,
-        )
-
-        self._normalize_external_integrations(
-            architecture,
+        self._check_api_coverage(
+            architecture=architecture,
+            registry=registry,
         )
 
         self._check_external_integrations(
-            architecture,
+            architecture=architecture,
+            requirements=requirements,
+        )
+
+        self._check_unsupported_capabilities(
+            architecture=architecture,
+            requirements=requirements,
         )
 
         self._check_unsupported_realtime_behavior(
-            architecture,
-            requirements,
+            architecture=architecture,
+            requirements=requirements,
         )
 
-        self._check_architecture_consistency(
-            architecture,
+        self._check_architecture_style_consistency(
+            architecture=architecture,
         )
 
         return architecture
 
-    @staticmethod
-    def _check_project_name(
+    def _validate_project_name(
+        self,
         architecture: SystemArchitecture,
         requirements: RequirementAnalysis,
     ) -> None:
 
-        if architecture.project_name.strip().casefold() != (
-            requirements.project_name.strip().casefold()
-        ):
+        if architecture.project_name.strip() != requirements.project_name.strip():
             raise ValueError(
-                "Architecture project_name does not match "
-                "RequirementAnalysis project_name."
+                "Architecture project_name does not match the requirement analysis."
             )
 
-    @staticmethod
     def _normalize_requirement_references(
+        self,
         architecture: SystemArchitecture,
         registry: RequirementRegistry,
     ) -> None:
-        """
-        Convert legacy exact-text references into canonical IDs.
-
-        No semantic rewriting is performed.
-        """
 
         for component in architecture.components:
-            component.related_requirements = (
-                registry.normalize_references(
-                    component.related_requirements
-                )
+            component.related_requirements = registry.normalize_references(
+                component.related_requirements
             )
 
         for endpoint in architecture.api_endpoints:
-            endpoint.related_requirements = (
-                registry.normalize_references(
-                    endpoint.related_requirements
-                )
+            endpoint.related_requirements = registry.normalize_references(
+                endpoint.related_requirements
             )
 
         for decision in architecture.architecture_decisions:
-            decision.related_requirements = (
-                registry.normalize_references(
-                    decision.related_requirements
-                )
+            decision.related_requirements = registry.normalize_references(
+                decision.related_requirements
             )
 
-    @staticmethod
-    def _check_required_fields(
+    def _validate_components(
+        self,
         architecture: SystemArchitecture,
     ) -> None:
-
-        required_fields = {
-            "architecture_style": architecture.architecture_style,
-            "frontend": architecture.frontend,
-            "backend": architecture.backend,
-            "database": architecture.database,
-            "authentication": architecture.authentication,
-        }
-
-        for field_name, value in required_fields.items():
-            if not value.strip():
-                raise ValueError(
-                    f"Architecture field '{field_name}' cannot be empty."
-                )
 
         if not architecture.components:
             raise ValueError(
                 "Architecture must contain at least one component."
             )
 
-        if not architecture.data_flow:
-            raise ValueError(
-                "Architecture must contain at least one data-flow statement."
-            )
-
-        if not architecture.architecture_decisions:
-            raise ValueError(
-                "Architecture must contain at least one architecture decision."
-            )
-
-    @staticmethod
-    def _check_component_references(
-        architecture: SystemArchitecture,
-        registry: RequirementRegistry,
-    ) -> None:
-
-        valid_ids = set(
-            registry.ids
-        )
+        seen_names: set[str] = set()
 
         for component in architecture.components:
+            name = component.name.strip()
 
-            if not component.name.strip():
+            if not name:
                 raise ValueError(
                     "Architecture component name cannot be empty."
                 )
 
             if not component.responsibility.strip():
                 raise ValueError(
-                    f"Architecture component '{component.name}' "
-                    "must have a responsibility."
+                    f"Architecture component '{name}' has an empty responsibility."
                 )
 
             if not component.related_requirements:
                 raise ValueError(
-                    f"Architecture component '{component.name}' "
-                    "must reference at least one requirement."
+                    f"Architecture component '{name}' has no requirement references."
                 )
 
-            unknown_ids = (
-                set(component.related_requirements)
-                - valid_ids
-            )
+            normalized_name = self._normalize_text(name)
 
-            if unknown_ids:
+            if normalized_name in seen_names:
                 raise ValueError(
-                    f"Architecture component '{component.name}' "
-                    f"references unknown requirements: "
-                    f"{sorted(unknown_ids)}"
+                    f"Duplicate architecture component detected: '{name}'."
                 )
 
-    @staticmethod
-    def _check_api_references(
+            seen_names.add(normalized_name)
+
+    def _validate_api_endpoints(
+        self,
         architecture: SystemArchitecture,
-        registry: RequirementRegistry,
     ) -> None:
 
-        valid_ids = set(
-            registry.ids
-        )
+        if not architecture.api_endpoints:
+            raise ValueError(
+                "Architecture must contain at least one API endpoint or API capability."
+            )
+
+        seen_names: set[str] = set()
 
         for endpoint in architecture.api_endpoints:
+            name = endpoint.name.strip()
 
-            if not endpoint.name.strip():
+            if not name:
                 raise ValueError(
-                    "API capability name cannot be empty."
+                    "API endpoint name cannot be empty."
                 )
 
             if not endpoint.purpose.strip():
                 raise ValueError(
-                    f"API capability '{endpoint.name}' "
-                    "must have a purpose."
+                    f"API endpoint '{name}' has an empty purpose."
                 )
 
             if not endpoint.related_requirements:
                 raise ValueError(
-                    f"API capability '{endpoint.name}' "
-                    "must reference at least one requirement."
+                    f"API endpoint '{name}' has no requirement references."
                 )
 
-            unknown_ids = (
-                set(endpoint.related_requirements)
-                - valid_ids
-            )
+            normalized_name = self._normalize_text(name)
 
-            if unknown_ids:
+            if normalized_name in seen_names:
                 raise ValueError(
-                    f"API capability '{endpoint.name}' "
-                    f"references unknown requirements: "
-                    f"{sorted(unknown_ids)}"
+                    f"Duplicate API endpoint detected: '{name}'."
                 )
 
-    @staticmethod
-    def _check_decision_references(
+            seen_names.add(normalized_name)
+
+    def _validate_architecture_decisions(
+        self,
         architecture: SystemArchitecture,
-        registry: RequirementRegistry,
     ) -> None:
 
-        valid_ids = set(
-            registry.ids
-        )
+        if not architecture.architecture_decisions:
+            raise ValueError(
+                "Architecture must contain at least one architecture decision."
+            )
 
         for decision in architecture.architecture_decisions:
-
             if not decision.decision.strip():
                 raise ValueError(
                     "Architecture decision cannot be empty."
@@ -264,225 +215,66 @@ class ArchitectureQualityController:
 
             if not decision.rationale.strip():
                 raise ValueError(
-                    f"Architecture decision '{decision.decision}' "
-                    "must have a rationale."
+                    f"Architecture decision '{decision.decision}' has an empty rationale."
                 )
 
             if not decision.related_requirements:
                 raise ValueError(
-                    f"Architecture decision '{decision.decision}' "
-                    "must reference at least one requirement."
+                    f"Architecture decision '{decision.decision}' has no requirement references."
                 )
 
-            unknown_ids = (
-                set(decision.related_requirements)
-                - valid_ids
-            )
-
-            if unknown_ids:
-                raise ValueError(
-                    f"Architecture decision '{decision.decision}' "
-                    f"references unknown requirements: "
-                    f"{sorted(unknown_ids)}"
-                )
-
-    @staticmethod
     def _check_component_coverage(
+        self,
         architecture: SystemArchitecture,
         registry: RequirementRegistry,
     ) -> None:
 
-        covered_ids = {
+        covered_requirements: set[str] = set()
+
+        for component in architecture.components:
+            covered_requirements.update(
+                component.related_requirements
+            )
+
+        missing = [
             requirement_id
-            for component in architecture.components
-            for requirement_id in component.related_requirements
-        }
+            for requirement_id in registry.ids
+            if requirement_id not in covered_requirements
+        ]
 
-        required_ids = set(
-            registry.ids
-        )
-
-        missing_ids = (
-            required_ids - covered_ids
-        )
-
-        if missing_ids:
-            missing_details = [
-                (
-                    f"{requirement_id}: "
-                    f"{registry.text_for_id(requirement_id)}"
-                )
-                for requirement_id in sorted(
-                    missing_ids
-                )
-            ]
-
+        if missing:
             raise ValueError(
-                "System architecture does not contain a component "
-                "covering every functional requirement. Missing: "
-                f"{missing_details}"
+                "The following functional requirements are not covered by "
+                f"any architecture component: {', '.join(missing)}"
             )
 
-    @staticmethod
-    def _check_duplicates(
+    def _check_api_coverage(
+        self,
         architecture: SystemArchitecture,
+        registry: RequirementRegistry,
     ) -> None:
 
-        component_names = [
-            component.name.strip().casefold()
-            for component in architecture.components
-        ]
+        covered_requirements: set[str] = set()
 
-        duplicate_components = [
-            name
-            for name, count in Counter(
-                component_names
-            ).items()
-            if count > 1
-        ]
-
-        if duplicate_components:
-            raise ValueError(
-                "Duplicate architecture components found: "
-                f"{duplicate_components}"
+        for endpoint in architecture.api_endpoints:
+            covered_requirements.update(
+                endpoint.related_requirements
             )
 
-        endpoint_names = [
-            endpoint.name.strip().casefold()
-            for endpoint in architecture.api_endpoints
+        missing = [
+            requirement_id
+            for requirement_id in registry.ids
+            if requirement_id not in covered_requirements
         ]
 
-        duplicate_endpoints = [
-            name
-            for name, count in Counter(
-                endpoint_names
-            ).items()
-            if count > 1
-        ]
-
-        if duplicate_endpoints:
+        if missing:
             raise ValueError(
-                "Duplicate API capabilities found: "
-                f"{duplicate_endpoints}"
+                "The following functional requirements are not represented "
+                f"by any API endpoint: {', '.join(missing)}"
             )
 
-    @staticmethod
-    def _build_external_context(
-        architecture: SystemArchitecture,
-    ) -> str:
-
-        return " ".join(
-            [
-                architecture.frontend,
-                architecture.backend,
-                architecture.database,
-                *[
-                    component.responsibility
-                    for component in architecture.components
-                ],
-                *architecture.data_flow,
-                *architecture.architectural_assumptions,
-                *[
-                    decision.decision
-                    for decision in architecture.architecture_decisions
-                ],
-                *[
-                    decision.rationale
-                    for decision in architecture.architecture_decisions
-                ],
-            ]
-        ).casefold()
-
-    @classmethod
-    def _normalize_external_integrations(
-        cls,
-        architecture: SystemArchitecture,
-    ) -> None:
-        """
-        Perform only safe field synchronization.
-
-        If the generated architecture already explicitly states an external
-        service, copy that same concept into external_integrations.
-
-        This is not semantic invention.
-        """
-
-        if architecture.external_integrations:
-            return
-
-        text = cls._build_external_context(
-            architecture
-        )
-
-        exact_integrations = (
-            (
-                "external payment processing service",
-                "External payment processing service",
-            ),
-            (
-                "external payment service",
-                "External payment processing service",
-            ),
-            (
-                "payment gateway",
-                "Payment gateway",
-            ),
-            (
-                "third-party payment",
-                "Third-party payment service",
-            ),
-            (
-                "third-party service",
-                "External third-party service",
-            ),
-            (
-                "external service",
-                "External service",
-            ),
-        )
-
-        for phrase, normalized_value in exact_integrations:
-            if phrase in text:
-                architecture.external_integrations.append(
-                    normalized_value
-                )
-                return
-
-    @classmethod
     def _check_external_integrations(
-        cls,
-        architecture: SystemArchitecture,
-    ) -> None:
-
-        text = cls._build_external_context(
-            architecture
-        )
-
-        integration_keywords = (
-            "external payment processing service",
-            "external payment service",
-            "payment gateway",
-            "third-party payment",
-            "third-party service",
-            "external service",
-        )
-
-        mentions_external = any(
-            keyword in text
-            for keyword in integration_keywords
-        )
-
-        if (
-            mentions_external
-            and not architecture.external_integrations
-        ):
-            raise ValueError(
-                "Architecture contains an external integration "
-                "but external_integrations is empty."
-            )
-
-    @staticmethod
-    def _check_unsupported_realtime_behavior(
+        self,
         architecture: SystemArchitecture,
         requirements: RequirementAnalysis,
     ) -> None:
@@ -491,23 +283,245 @@ class ArchitectureQualityController:
             requirements.functional_requirements
         ).casefold()
 
-        requires_realtime = (
-            "real-time" in requirement_text
-            or "real time" in requirement_text
-            or "realtime" in requirement_text
-        )
-
-        if requires_realtime:
-            return
-
         architecture_text = " ".join(
             [
-                *architecture.data_flow,
-                *architecture.architectural_assumptions,
+                architecture.authentication,
                 *[
                     component.responsibility
                     for component in architecture.components
                 ],
+                *[
+                    endpoint.purpose
+                    for endpoint in architecture.api_endpoints
+                ],
+                *architecture.data_flow,
+                *architecture.architectural_assumptions,
+            ]
+        ).casefold()
+
+        payment_requested = any(
+            term in requirement_text
+            for term in (
+                "payment",
+                "payments",
+                "pay",
+                "checkout",
+            )
+        )
+
+        payment_mentioned = any(
+            term in architecture_text
+            for term in (
+                "payment service",
+                "payment processing service",
+                "external payment",
+                "payment gateway",
+                "payment processor",
+            )
+        )
+
+        if payment_requested and payment_mentioned:
+            has_payment_integration = any(
+                any(
+                    payment_term in integration.casefold()
+                    for payment_term in (
+                        "payment",
+                        "payment processor",
+                        "payment gateway",
+                    )
+                )
+                for integration in architecture.external_integrations
+            )
+
+            if not has_payment_integration:
+                architecture.external_integrations.append(
+                    "External payment processing service"
+                )
+
+    def _check_unsupported_capabilities(
+        self,
+        architecture: SystemArchitecture,
+        requirements: RequirementAnalysis,
+    ) -> None:
+        """
+        Detect clear capabilities introduced by the architecture that are
+        not supported by the authoritative requirements.
+
+        This intentionally uses a small conservative set of high-confidence
+        checks rather than broad semantic rewriting.
+        """
+
+        requirement_text = " ".join(
+            [
+                requirements.objective,
+                *requirements.functional_requirements,
+                *requirements.non_functional_requirements,
+            ]
+        ).casefold()
+
+        component_text = " ".join(
+            [
+                component.name
+                for component in architecture.components
+            ]
+            + [
+                component.responsibility
+                for component in architecture.components
+            ]
+        ).casefold()
+
+        endpoint_text = " ".join(
+            [
+                endpoint.name
+                for endpoint in architecture.api_endpoints
+            ]
+            + [
+                endpoint.purpose
+                for endpoint in architecture.api_endpoints
+            ]
+        ).casefold()
+
+        architecture_text = " ".join(
+            [
+                architecture.authentication,
+                architecture.data_flow,
+                architecture.external_integrations,
+                architecture.architectural_assumptions,
+            ]
+            + [
+                decision.decision
+                for decision in architecture.architecture_decisions
+            ]
+            + [
+                decision.rationale
+                for decision in architecture.architecture_decisions
+            ]
+        ).casefold()
+
+        full_text = " ".join(
+            [
+                component_text,
+                endpoint_text,
+                architecture_text,
+            ]
+        )
+
+        authentication_required = any(
+            term in requirement_text
+            for term in (
+                "authentication",
+                "authenticate",
+                "login",
+                "log in",
+                "signup",
+                "sign up",
+                "user account",
+                "accounts",
+                "authorization",
+                "authorisation",
+            )
+        )
+
+        if not authentication_required:
+            unsupported_auth_terms = (
+                "token-based authentication",
+                "token based authentication",
+                "jwt authentication",
+                "jwt",
+                "oauth",
+                "login",
+                "log in",
+                "signup",
+                "sign up",
+                "authentication service",
+                "authorization service",
+                "authorisation service",
+            )
+
+            found_auth_terms = [
+                term
+                for term in unsupported_auth_terms
+                if term in full_text
+            ]
+
+            if found_auth_terms:
+                raise ValueError(
+                    "Architecture introduces authentication behavior that is "
+                    "not supported by the requirements: "
+                    + ", ".join(sorted(set(found_auth_terms)))
+                )
+
+        discovery_requirement = any(
+            term in requirement_text
+            for term in (
+                "discover restaurants",
+                "restaurant discovery",
+                "browse restaurants",
+            )
+        )
+
+        if discovery_requirement:
+            unsupported_discovery_terms = (
+                "user location",
+                "location-based",
+                "location based",
+                "gps",
+                "user preferences",
+                "preferences",
+                "personalization",
+                "personalisation",
+                "recommendation",
+                "recommended restaurants",
+            )
+
+            found_discovery_terms = [
+                term
+                for term in unsupported_discovery_terms
+                if term in full_text
+            ]
+
+            if found_discovery_terms:
+                raise ValueError(
+                    "Architecture introduces unsupported restaurant-discovery "
+                    "capabilities: "
+                    + ", ".join(sorted(set(found_discovery_terms)))
+                )
+
+    def _check_unsupported_realtime_behavior(
+        self,
+        architecture: SystemArchitecture,
+        requirements: RequirementAnalysis,
+    ) -> None:
+
+        requirement_text = " ".join(
+            requirements.functional_requirements
+        ).casefold()
+
+        architecture_text = " ".join(
+            [
+                architecture.frontend,
+                architecture.backend,
+                architecture.database,
+                architecture.authentication,
+                *[
+                    component.name
+                    for component in architecture.components
+                ],
+                *[
+                    component.responsibility
+                    for component in architecture.components
+                ],
+                *[
+                    endpoint.name
+                    for endpoint in architecture.api_endpoints
+                ],
+                *[
+                    endpoint.purpose
+                    for endpoint in architecture.api_endpoints
+                ],
+                *architecture.data_flow,
+                *architecture.external_integrations,
+                *architecture.architectural_assumptions,
                 *[
                     decision.decision
                     for decision in architecture.architecture_decisions
@@ -519,50 +533,80 @@ class ArchitectureQualityController:
             ]
         ).casefold()
 
-        realtime_terms = (
-            "real-time",
-            "real time",
-            "realtime",
+        realtime_required = any(
+            term in requirement_text
+            for term in (
+                "real-time",
+                "realtime",
+                "live tracking",
+                "live updates",
+                "instant updates",
+            )
         )
 
-        detected = [
+        if realtime_required:
+            return
+
+        unsupported_terms = (
+            "real-time",
+            "realtime",
+            "websocket",
+            "web sockets",
+            "live gps",
+            "gps tracking",
+            "push notification",
+            "push notifications",
+        )
+
+        found_terms = [
             term
-            for term in realtime_terms
+            for term in unsupported_terms
             if term in architecture_text
         ]
 
-        if detected:
+        if found_terms:
+            unique_terms = sorted(set(found_terms))
+
             raise ValueError(
-                "Architecture introduces real-time behavior that is not "
-                "present in the authoritative functional requirements: "
-                f"{detected}"
+                "Architecture introduces unsupported real-time or advanced "
+                f"tracking behavior: {', '.join(unique_terms)}"
             )
 
-    @staticmethod
-    def _check_architecture_consistency(
+    def _check_architecture_style_consistency(
+        self,
         architecture: SystemArchitecture,
     ) -> None:
 
-        style = architecture.architecture_style.casefold()
-
-        component_text = " ".join(
-            component.name.casefold()
-            for component in architecture.components
-        )
-
-        decision_text = " ".join(
-            decision.decision.casefold()
-            for decision in architecture.architecture_decisions
-        )
-
-        if (
-            ("layered" in style or "modular monolith" in style)
-            and (
-                "microservice" in component_text
-                or "microservice" in decision_text
-            )
-        ):
+        if not architecture.architecture_style.strip():
             raise ValueError(
-                "Architecture style conflicts with "
-                "microservice-based design."
+                "Architecture style cannot be empty."
             )
+
+        if not architecture.frontend.strip():
+            raise ValueError(
+                "Frontend architecture cannot be empty."
+            )
+
+        if not architecture.backend.strip():
+            raise ValueError(
+                "Backend architecture cannot be empty."
+            )
+
+        if not architecture.database.strip():
+            raise ValueError(
+                "Database architecture cannot be empty."
+            )
+
+        if not architecture.authentication.strip():
+            raise ValueError(
+                "Authentication architecture cannot be empty."
+            )
+
+        if not architecture.data_flow:
+            raise ValueError(
+                "Architecture must contain at least one data-flow description."
+            )
+
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        return " ".join(value.split()).casefold()
