@@ -384,17 +384,17 @@ class ArchitectureQualityController:
         architecture_text = " ".join(
             [
                 architecture.authentication,
-                architecture.data_flow,
-                architecture.external_integrations,
-                architecture.architectural_assumptions,
-            ]
-            + [
-                decision.decision
-                for decision in architecture.architecture_decisions
-            ]
-            + [
-                decision.rationale
-                for decision in architecture.architecture_decisions
+                *architecture.data_flow,
+                *architecture.external_integrations,
+                *architecture.architectural_assumptions,
+                *[
+                    decision.decision
+                    for decision in architecture.architecture_decisions
+                ],
+                *[
+                    decision.rationale
+                    for decision in architecture.architecture_decisions
+                ],
             ]
         ).casefold()
 
