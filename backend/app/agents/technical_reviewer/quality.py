@@ -1,19 +1,26 @@
 from collections import Counter
 
+from app.core.traceability.requirements import RequirementRegistry
+
 from app.agents.project_planner.schemas import ProjectPlan
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
 from app.agents.software_architect.schemas import SystemArchitecture
 
-from .schemas import ReviewReport, ReviewFinding
+from .schemas import ReviewFinding, ReviewReport
 
 
 class TechnicalReviewQualityController:
     """
-    Deterministic validation and normalization for ReviewReport.
+    Deterministic validation for ReviewReport.
 
-    The controller validates the review itself and also enforces
-    important project-level consistency rules that must not depend
-    entirely on LLM judgment.
+    The controller independently validates:
+    - project identity
+    - requirement coverage
+    - traceability
+    - findings structure
+    - architecture consistency
+    - obvious unsupported capabilities
+    - review status consistency
     """
 
     def validate(
@@ -22,36 +29,52 @@ class TechnicalReviewQualityController:
         requirements: RequirementAnalysis,
         project_plan: ProjectPlan,
         architecture: SystemArchitecture,
+        registry: RequirementRegistry | None = None,
     ) -> ReviewReport:
 
-        self._check_project_name(
+        if not isinstance(
             report,
-            requirements,
+            ReviewReport,
+        ):
+            raise TypeError(
+                "report must be an instance of ReviewReport."
+            )
+
+        if registry is None:
+            registry = RequirementRegistry.from_analysis(
+                requirements
+            )
+
+        self._check_project_name(
+            report=report,
+            requirements=requirements,
         )
 
         self._check_coverage(
-            report,
-            requirements,
-            project_plan,
-            architecture,
+            report=report,
+            requirements=requirements,
+            project_plan=project_plan,
+            architecture=architecture,
+            registry=registry,
         )
 
         self._check_findings(
-            report,
+            report=report,
         )
 
         self._apply_deterministic_architecture_checks(
-            report,
-            requirements,
-            architecture,
+            report=report,
+            requirements=requirements,
+            architecture=architecture,
+            registry=registry,
         )
 
         self._check_status(
-            report,
+            report=report,
         )
 
         self._check_problem_consistency(
-            report,
+            report=report,
         )
 
         return report
@@ -61,8 +84,10 @@ class TechnicalReviewQualityController:
         report: ReviewReport,
         requirements: RequirementAnalysis,
     ) -> None:
-        if report.project_name.strip().casefold() != (
-            requirements.project_name.strip().casefold()
+
+        if (
+            report.project_name.strip().casefold()
+            != requirements.project_name.strip().casefold()
         ):
             raise ValueError(
                 "Review report project_name does not match "
@@ -75,73 +100,155 @@ class TechnicalReviewQualityController:
         requirements: RequirementAnalysis,
         project_plan: ProjectPlan,
         architecture: SystemArchitecture,
+        registry: RequirementRegistry,
     ) -> None:
-        required = {
-            item.strip()
-            for item in requirements.functional_requirements
-        }
 
-        plan_refs = {
-            reference.strip()
-            for milestone in project_plan.milestones
-            for reference in milestone.requirement_refs
-        }
+        required_ids = set(
+            registry.ids
+        )
 
-        architecture_refs = {
-            reference.strip()
-            for component in architecture.components
-            for reference in component.related_requirements
-        }
+        plan_refs: set[str] = set()
 
-        report_requirements = {
-            coverage.requirement.strip()
-            for coverage in report.requirement_coverage
-        }
-
-        missing_report_entries = required - report_requirements
-
-        if missing_report_entries:
-            raise ValueError(
-                "Review report is missing requirement coverage entries: "
-                f"{sorted(missing_report_entries)}"
+        for milestone in project_plan.milestones:
+            plan_refs.update(
+                registry.normalize_references(
+                    milestone.requirement_refs
+                )
             )
 
-        if report_requirements != required:
-            extra_entries = report_requirements - required
-
-            if extra_entries:
-                raise ValueError(
-                    "Review report contains invalid requirement entries: "
-                    f"{sorted(extra_entries)}"
+            for task in milestone.tasks:
+                task_refs = registry.normalize_references(
+                    task.requirement_refs
                 )
+
+                plan_refs.update(task_refs)
+
+                if not set(task_refs).issubset(
+                    set(
+                        registry.normalize_references(
+                            milestone.requirement_refs
+                        )
+                    )
+                ):
+                    raise ValueError(
+                        f"ProjectPlan task '{task.description}' contains "
+                        "requirement references outside its parent milestone."
+                    )
+
+        component_refs: set[str] = set()
+
+        for component in architecture.components:
+            component_refs.update(
+                registry.normalize_references(
+                    component.related_requirements
+                )
+            )
+
+        api_refs: set[str] = set()
+
+        for endpoint in architecture.api_endpoints:
+            api_refs.update(
+                registry.normalize_references(
+                    endpoint.related_requirements
+                )
+            )
+
+        report_ids: list[str] = []
 
         for coverage in report.requirement_coverage:
-            requirement = coverage.requirement.strip()
 
-            if requirement not in required:
+            requirement_id = registry.normalize_reference(
+                coverage.requirement_id
+            )
+
+            report_ids.append(
+                requirement_id
+            )
+
+            expected_text = registry.text_for_id(
+                requirement_id
+            )
+
+            if coverage.requirement.strip() != expected_text.strip():
                 raise ValueError(
-                    f"Invalid requirement in review coverage: {requirement}"
+                    f"Requirement text mismatch for {requirement_id}."
                 )
 
-            expected_plan = requirement in plan_refs
-            expected_architecture = requirement in architecture_refs
+            expected_plan = (
+                requirement_id in plan_refs
+            )
+
+            expected_architecture = (
+                requirement_id in component_refs
+            )
+
+            expected_api = (
+                requirement_id in api_refs
+            )
 
             if coverage.in_project_plan != expected_plan:
                 raise ValueError(
-                    f"Incorrect project-plan coverage for requirement: "
-                    f"{requirement}"
+                    "Incorrect project-plan coverage for "
+                    f"{requirement_id}."
                 )
 
             if coverage.in_architecture != expected_architecture:
                 raise ValueError(
-                    f"Incorrect architecture coverage for requirement: "
-                    f"{requirement}"
+                    "Incorrect architecture coverage for "
+                    f"{requirement_id}."
                 )
+
+            if coverage.in_api != expected_api:
+                raise ValueError(
+                    "Incorrect API coverage for "
+                    f"{requirement_id}."
+                )
+
+        duplicate_ids = [
+            requirement_id
+            for requirement_id, count in Counter(
+                report_ids
+            ).items()
+            if count > 1
+        ]
+
+        if duplicate_ids:
+            raise ValueError(
+                "Review report contains duplicate requirement coverage "
+                f"entries: {duplicate_ids}"
+            )
+
+        report_id_set = set(
+            report_ids
+        )
+
+        missing_ids = required_ids - report_id_set
+
+        if missing_ids:
+            raise ValueError(
+                "Review report is missing requirement coverage entries: "
+                f"{sorted(missing_ids)}"
+            )
+
+        extra_ids = report_id_set - required_ids
+
+        if extra_ids:
+            raise ValueError(
+                "Review report contains invalid requirement IDs: "
+                f"{sorted(extra_ids)}"
+            )
+
+        if report_id_set != required_ids:
+            raise ValueError(
+                "Review report requirement coverage does not exactly "
+                "match the authoritative functional requirements."
+            )
 
     @staticmethod
     def _check_findings(
         report: ReviewReport,
     ) -> None:
+
         titles = [
             finding.title.strip().casefold()
             for finding in report.findings
@@ -149,7 +256,9 @@ class TechnicalReviewQualityController:
 
         duplicates = [
             title
-            for title, count in Counter(titles).items()
+            for title, count in Counter(
+                titles
+            ).items()
             if count > 1
         ]
 
@@ -159,6 +268,7 @@ class TechnicalReviewQualityController:
             )
 
         for finding in report.findings:
+
             if not finding.title.strip():
                 raise ValueError(
                     "Review finding title cannot be empty."
@@ -181,13 +291,13 @@ class TechnicalReviewQualityController:
         report: ReviewReport,
         requirements: RequirementAnalysis,
         architecture: SystemArchitecture,
+        registry: RequirementRegistry,
     ) -> None:
         """
-        Enforce important architecture-review rules deterministically.
+        Add only high-confidence deterministic findings.
 
-        These checks exist because an LLM reviewer may occasionally
-        overlook a contradiction that can be established directly
-        from the structured artifacts.
+        These checks supplement the LLM review. They do not rewrite
+        architectural content.
         """
 
         requirement_text = " ".join(
@@ -199,157 +309,452 @@ class TechnicalReviewQualityController:
             ]
         ).casefold()
 
-        authentication_keywords = (
-            "authentication",
-            "authenticate",
-            "login",
-            "log in",
-            "sign in",
-            "signin",
-            "account",
-            "authorization",
-            "role-based access",
-            "access control",
-            "user credentials",
-            "password",
-        )
+        architecture_text = " ".join(
+            [
+                architecture.frontend,
+                architecture.backend,
+                architecture.database,
+                architecture.authentication,
+                *architecture.data_flow,
+                *architecture.external_integrations,
+                *architecture.architectural_assumptions,
+                *[
+                    component.name
+                    for component in architecture.components
+                ],
+                *[
+                    component.responsibility
+                    for component in architecture.components
+                ],
+                *[
+                    endpoint.name
+                    for endpoint in architecture.api_endpoints
+                ],
+                *[
+                    endpoint.purpose
+                    for endpoint in architecture.api_endpoints
+                ],
+                *[
+                    decision.decision
+                    for decision in architecture.architecture_decisions
+                ],
+                *[
+                    decision.rationale
+                    for decision in architecture.architecture_decisions
+                ],
+            ]
+        ).casefold()
 
-        authentication_required_by_input = any(
+        authentication_required = any(
             keyword in requirement_text
-            for keyword in authentication_keywords
+            for keyword in (
+                "authentication",
+                "authenticate",
+                "login",
+                "log in",
+                "sign in",
+                "signin",
+                "signup",
+                "sign up",
+                "authorization",
+                "authorisation",
+                "password",
+                "user credentials",
+            )
         )
 
         selected_authentication = (
             architecture.authentication.strip()
         )
 
-        authentication_was_selected = (
-            selected_authentication
-            and selected_authentication.casefold()
-            != "not required based on current requirements"
-        )
+        authentication_is_none = selected_authentication.casefold() in {
+            "none",
+            "not required",
+            "not required based on current requirements",
+            "no authentication",
+            "no authentication required",
+        }
 
         if (
-            authentication_was_selected
-            and not authentication_required_by_input
+            not authentication_required
+            and selected_authentication
+            and not authentication_is_none
         ):
-            existing_titles = {
-                finding.title.strip().casefold()
-                for finding in report.findings
-            }
-
-            title = (
+            self_title = (
                 "Authentication introduced without explicit "
                 "requirement support"
             )
 
-            if title.casefold() not in existing_titles:
-                report.findings.append(
-                    ReviewFinding(
-                        category="assumption",
+            self._add_finding(
+                report=report,
+                finding=ReviewFinding(
+                    category="assumption",
+                    severity="medium",
+                    title=self_title,
+                    evidence=(
+                        "SystemArchitecture selects "
+                        f"'{selected_authentication}', but the "
+                        "authoritative RequirementAnalysis does not "
+                        "contain an explicit authentication-related "
+                        "requirement."
+                    ),
+                    recommendation=(
+                        "Either obtain explicit confirmation that "
+                        "authentication is required, or label the "
+                        "authentication approach as an architectural "
+                        "assumption rather than a confirmed requirement."
+                    ),
+                ),
+                consistency_issue=(
+                    "Authentication was introduced without explicit "
+                    "authentication-related requirements."
+                ),
+                unsupported_addition=(
+                    "Authentication was introduced without explicit "
+                    "authentication-related requirements."
+                ),
+                action=(
+                    "Clarify whether authentication is required before "
+                    "treating the selected authentication architecture "
+                    "as confirmed."
+                ),
+            )
+
+        realtime_required = any(
+            term in requirement_text
+            for term in (
+                "real-time",
+                "realtime",
+                "live tracking",
+                "live updates",
+                "instant updates",
+            )
+        )
+
+        if not realtime_required:
+            realtime_terms = (
+                "real-time",
+                "realtime",
+                "websocket",
+                "web sockets",
+                "gps tracking",
+                "live gps",
+                "push notification",
+                "push notifications",
+            )
+
+            found = sorted(
+                {
+                    term
+                    for term in realtime_terms
+                    if term in architecture_text
+                }
+            )
+
+            if found:
+                title = (
+                    "Unsupported real-time or advanced tracking behavior"
+                )
+
+                self._add_finding(
+                    report=report,
+                    finding=ReviewFinding(
+                        category="architecture",
+                        severity="high",
+                        title=title,
+                        evidence=(
+                            "SystemArchitecture contains unsupported "
+                            "real-time or advanced tracking terms: "
+                            + ", ".join(found)
+                        ),
+                        recommendation=(
+                            "Remove the unsupported behavior unless "
+                            "the user explicitly requires it."
+                        ),
+                    ),
+                    consistency_issue=(
+                        "Architecture introduces unsupported real-time "
+                        "or advanced tracking behavior."
+                    ),
+                    unsupported_addition=(
+                        "Unsupported real-time or advanced tracking "
+                        "behavior was introduced."
+                    ),
+                    action=(
+                        "Remove unsupported real-time or advanced "
+                        "tracking behavior or obtain explicit "
+                        "requirement support."
+                    ),
+                )
+
+        discovery_required = any(
+            term in requirement_text
+            for term in (
+                "discover restaurants",
+                "restaurant discovery",
+                "browse restaurants",
+            )
+        )
+
+        if discovery_required:
+            discovery_terms = (
+                "user location",
+                "location-based",
+                "location based",
+                "gps",
+                "user preferences",
+                "preferences",
+                "personalization",
+                "personalisation",
+                "recommendation",
+                "recommended restaurants",
+            )
+
+            found = sorted(
+                {
+                    term
+                    for term in discovery_terms
+                    if term in architecture_text
+                }
+            )
+
+            if found:
+                title = (
+                    "Unsupported restaurant-discovery behavior"
+                )
+
+                self._add_finding(
+                    report=report,
+                    finding=ReviewFinding(
+                        category="architecture",
                         severity="medium",
                         title=title,
                         evidence=(
-                            "SystemArchitecture selects "
-                            f"'{selected_authentication}', but "
-                            "RequirementAnalysis does not explicitly "
-                            "contain authentication, login, account, "
-                            "authorization, or access-control requirements."
+                            "SystemArchitecture introduces restaurant "
+                            "discovery behavior not established by "
+                            "RequirementAnalysis: "
+                            + ", ".join(found)
                         ),
                         recommendation=(
-                            "Either obtain explicit confirmation that "
-                            "authentication is required, or clearly label "
-                            "the authentication approach as an architectural "
-                            "assumption rather than an established requirement."
+                            "Keep restaurant discovery at the level "
+                            "specified by the requirements unless the "
+                            "additional behavior is explicitly confirmed."
                         ),
-                    )
+                    ),
+                    consistency_issue=(
+                        "Architecture introduces unsupported "
+                        "restaurant-discovery behavior."
+                    ),
+                    unsupported_addition=(
+                        "Unsupported restaurant-discovery behavior "
+                        "was introduced."
+                    ),
+                    action=(
+                        "Remove unsupported restaurant-discovery "
+                        "behavior or clarify the requirement."
+                    ),
                 )
 
-            if not any(
-                issue.casefold()
-                == title.casefold()
-                for issue in report.architecture_consistency_issues
-            ):
-                report.architecture_consistency_issues.append(
-                    "Authentication was introduced without explicit "
-                    "authentication-related requirements."
+        project_plan_refs = set()
+
+        for component in architecture.components:
+            project_plan_refs.update(
+                registry.normalize_references(
+                    component.related_requirements
                 )
-
-            if not any(
-                addition.casefold()
-                == title.casefold()
-                for addition in report.unsupported_additions
-            ):
-                report.unsupported_additions.append(
-                    "Authentication was introduced without explicit "
-                    "authentication-related requirements."
-                )
-
-            report.overall_status = "NEEDS_REVISION"
-
-            action = (
-                "Clarify whether authentication and authorization are "
-                "required before treating the selected authentication "
-                "architecture as confirmed."
             )
 
-            if action not in report.recommended_actions:
-                report.recommended_actions.append(
-                    action
+        for requirement_id in registry.ids:
+            if requirement_id not in project_plan_refs:
+                continue
+
+        api_requirement_ids = set()
+
+        for endpoint in architecture.api_endpoints:
+            api_requirement_ids.update(
+                registry.normalize_references(
+                    endpoint.related_requirements
                 )
+            )
+
+        missing_api_ids = [
+            requirement_id
+            for requirement_id in registry.ids
+            if requirement_id not in api_requirement_ids
+        ]
+
+        if missing_api_ids:
+            title = (
+                "Functional requirements missing API coverage"
+            )
+
+            self._add_finding(
+                report=report,
+                finding=ReviewFinding(
+                    category="traceability",
+                    severity="high",
+                    title=title,
+                    evidence=(
+                        "The following functional requirements are not "
+                        "represented by an API capability: "
+                        + ", ".join(missing_api_ids)
+                    ),
+                    recommendation=(
+                        "Add requirement-derived API capabilities or "
+                        "clarify why backend interaction is not needed."
+                    ),
+                ),
+                consistency_issue=(
+                    "One or more functional requirements lack API coverage."
+                ),
+                action=(
+                    "Add API capabilities for the uncovered functional "
+                    "requirements."
+                ),
+            )
+
+    @staticmethod
+    def _add_finding(
+        report: ReviewReport,
+        finding: ReviewFinding,
+        consistency_issue: str | None = None,
+        unsupported_addition: str | None = None,
+        action: str | None = None,
+    ) -> None:
+
+        existing_titles = {
+            item.title.strip().casefold()
+            for item in report.findings
+        }
+
+        if finding.title.strip().casefold() not in existing_titles:
+            report.findings.append(
+                finding
+            )
+
+        if (
+            consistency_issue
+            and consistency_issue not in report.architecture_consistency_issues
+        ):
+            report.architecture_consistency_issues.append(
+                consistency_issue
+            )
+
+        if (
+            unsupported_addition
+            and unsupported_addition
+            not in report.unsupported_additions
+        ):
+            report.unsupported_additions.append(
+                unsupported_addition
+            )
+
+        if (
+            action
+            and action not in report.recommended_actions
+        ):
+            report.recommended_actions.append(
+                action
+            )
+
+        if finding.severity in {
+            "medium",
+            "high",
+            "critical",
+        }:
+            report.overall_status = "NEEDS_REVISION"
 
     @staticmethod
     def _check_status(
         report: ReviewReport,
     ) -> None:
-        has_serious_findings = any(
-            finding.severity in {"high", "critical"}
+
+        serious_findings = any(
+            finding.severity in {
+                "high",
+                "critical",
+            }
             for finding in report.findings
         )
 
-        if has_serious_findings and report.overall_status == "PASS":
+        material_findings = any(
+            finding.severity in {
+                "medium",
+                "high",
+                "critical",
+            }
+            for finding in report.findings
+        )
+
+        has_material_issues = (
+            bool(
+                report.unsupported_additions
+                or report.architecture_consistency_issues
+            )
+            or material_findings
+        )
+
+        if (
+            serious_findings
+            and report.overall_status == "PASS"
+        ):
             raise ValueError(
                 "Review cannot be PASS when high or critical findings exist."
             )
 
         if (
-            report.findings
-            or report.unsupported_additions
-            or report.architecture_consistency_issues
+            has_material_issues
+            and report.overall_status == "PASS"
         ):
-            if report.overall_status == "PASS":
-                raise ValueError(
-                    "Review cannot be PASS when material findings or "
-                    "architecture issues are present."
-                )
+            raise ValueError(
+                "Review cannot be PASS when material findings or "
+                "architecture issues are present."
+            )
+
+        if (
+            report.overall_status == "NEEDS_REVISION"
+            and not has_material_issues
+        ):
+            raise ValueError(
+                "Review is marked NEEDS_REVISION but no material "
+                "review problem was identified."
+            )
 
     @staticmethod
     def _check_problem_consistency(
         report: ReviewReport,
     ) -> None:
-        has_reported_problems = bool(
+
+        has_problem_lists = bool(
             report.unsupported_additions
             or report.architecture_consistency_issues
-            or report.findings
-            or report.recommended_actions
         )
 
         if (
-            report.overall_status == "NEEDS_REVISION"
-            and not has_reported_problems
+            has_problem_lists
+            and not report.findings
         ):
             raise ValueError(
-                "Review is marked NEEDS_REVISION but contains no "
-                "identified problems."
+                "Review reported unsupported additions or architecture "
+                "issues but findings is empty."
             )
 
-        has_problem_categories = bool(
-            report.unsupported_additions
-            or report.architecture_consistency_issues
-        )
+        material_finding_titles = {
+            finding.title.strip().casefold()
+            for finding in report.findings
+            if finding.severity in {
+                "medium",
+                "high",
+                "critical",
+            }
+        }
 
-        if has_problem_categories and not report.findings:
+        if (
+            report.overall_status == "NEEDS_REVISION"
+            and not material_finding_titles
+            and not has_problem_lists
+        ):
             raise ValueError(
-                "Unsupported additions or architecture consistency issues "
-                "were reported, but findings is empty."
+                "Review is marked NEEDS_REVISION without a material "
+                "finding or problem category."
             )

@@ -1,167 +1,114 @@
-from langgraph.graph import END, START, StateGraph
+from dataclasses import dataclass
+
+from app.agents.requirement_analyst.agent import RequirementAnalyst
+from app.agents.requirement_analyst.schemas import RequirementAnalysis
 
 from app.agents.project_planner.agent import ProjectPlanner
-from app.agents.requirement_analyst.agent import RequirementAnalyst
+from app.agents.project_planner.schemas import ProjectPlan
+
 from app.agents.software_architect.agent import SoftwareArchitect
+from app.agents.software_architect.schemas import SystemArchitecture
+
 from app.agents.technical_reviewer.agent import TechnicalReviewer
+from app.agents.technical_reviewer.schemas import ReviewReport
 
-from .state import ProjectState
+from app.core.model_config import (
+    REQUIREMENT_ANALYST_MODEL,
+    PROJECT_PLANNER_MODEL,
+    SOFTWARE_ARCHITECT_MODEL,
+    TECHNICAL_REVIEWER_MODEL,
+)
 
 
-requirement_agent = RequirementAnalyst()
-planner_agent = ProjectPlanner()
-architect_agent = SoftwareArchitect()
-reviewer_agent = TechnicalReviewer()
+@dataclass
+class ProjectWorkflowResult:
+    requirements: RequirementAnalysis
+    project_plan: ProjectPlan
+    architecture: SystemArchitecture
+    review: ReviewReport
+
+    @property
+    def approved(self) -> bool:
+        return self.review.overall_status == "PASS"
+
+    def to_dict(self) -> dict:
+        return {
+            "requirements": self.requirements.model_dump(),
+            "project_plan": self.project_plan.model_dump(),
+            "architecture": self.architecture.model_dump(),
+            "review": self.review.model_dump(),
+            "approved": self.approved,
+        }
 
 
-def analyze_requirements(
-    state: ProjectState,
-) -> ProjectState:
-    idea = state.get("idea", "").strip()
+class ProjectWorkflow:
+    """
+    End-to-end AI Development Studio workflow.
 
-    if not idea:
-        raise ValueError(
-            "Project idea cannot be empty."
+    Idea
+      -> Requirement Analysis
+      -> Project Plan
+      -> System Architecture
+      -> Technical Review
+    """
+
+    def __init__(
+        self,
+        requirement_model: str = REQUIREMENT_ANALYST_MODEL,
+        planner_model: str = PROJECT_PLANNER_MODEL,
+        architect_model: str = SOFTWARE_ARCHITECT_MODEL,
+        reviewer_model: str = TECHNICAL_REVIEWER_MODEL,
+    ):
+        self.requirement_agent = RequirementAnalyst(
+            model_name=requirement_model
         )
 
-    requirements = requirement_agent.analyze(idea)
-
-    return {
-        **state,
-        "requirements": requirements,
-    }
-
-
-def create_project_plan(
-    state: ProjectState,
-) -> ProjectState:
-    requirements = state.get("requirements")
-
-    if requirements is None:
-        raise ValueError(
-            "Requirement analysis is missing."
+        self.planner_agent = ProjectPlanner(
+            model_name=planner_model
         )
 
-    project_plan = planner_agent.plan(
-        requirements
-    )
-
-    return {
-        **state,
-        "project_plan": project_plan,
-    }
-
-
-def create_architecture(
-    state: ProjectState,
-) -> ProjectState:
-    requirements = state.get("requirements")
-    project_plan = state.get("project_plan")
-
-    if requirements is None:
-        raise ValueError(
-            "Requirement analysis is missing."
+        self.architect_agent = SoftwareArchitect(
+            model_name=architect_model
         )
 
-    if project_plan is None:
-        raise ValueError(
-            "Project plan is missing."
+        self.reviewer_agent = TechnicalReviewer(
+            model_name=reviewer_model
         )
 
-    architecture = architect_agent.design(
-        requirements,
-        project_plan,
-    )
+    def run(self, idea: str) -> ProjectWorkflowResult:
+        if not idea or not idea.strip():
+            raise ValueError(
+                "Software idea cannot be empty."
+            )
 
-    return {
-        **state,
-        "architecture": architecture,
-    }
+        cleaned_idea = idea.strip()
 
-
-def review_project(
-    state: ProjectState,
-) -> ProjectState:
-    requirements = state.get("requirements")
-    project_plan = state.get("project_plan")
-    architecture = state.get("architecture")
-
-    if requirements is None:
-        raise ValueError(
-            "Requirement analysis is missing."
+        print("\n=== WORKFLOW: REQUIREMENTS ===")
+        requirements = self.requirement_agent.analyze(
+            cleaned_idea
         )
 
-    if project_plan is None:
-        raise ValueError(
-            "Project plan is missing."
+        print("\n=== WORKFLOW: PROJECT PLAN ===")
+        project_plan = self.planner_agent.plan(
+            requirements
         )
 
-    if architecture is None:
-        raise ValueError(
-            "System architecture is missing."
+        print("\n=== WORKFLOW: ARCHITECTURE ===")
+        architecture = self.architect_agent.design(
+            requirements,
+            project_plan,
         )
 
-    review = reviewer_agent.review(
-        requirements,
-        project_plan,
-        architecture,
-    )
+        print("\n=== WORKFLOW: TECHNICAL REVIEW ===")
+        review = self.reviewer_agent.review(
+            requirements,
+            project_plan,
+            architecture,
+        )
 
-    return {
-        **state,
-        "review": review,
-    }
-
-
-def build_project_workflow():
-    graph = StateGraph(ProjectState)
-
-    graph.add_node(
-        "requirement_analysis",
-        analyze_requirements,
-    )
-
-    graph.add_node(
-        "project_planning",
-        create_project_plan,
-    )
-
-    graph.add_node(
-        "architecture_design",
-        create_architecture,
-    )
-
-    graph.add_node(
-        "technical_review",
-        review_project,
-    )
-
-    graph.add_edge(
-        START,
-        "requirement_analysis",
-    )
-
-    graph.add_edge(
-        "requirement_analysis",
-        "project_planning",
-    )
-
-    graph.add_edge(
-        "project_planning",
-        "architecture_design",
-    )
-
-    graph.add_edge(
-        "architecture_design",
-        "technical_review",
-    )
-
-    graph.add_edge(
-        "technical_review",
-        END,
-    )
-
-    return graph.compile()
-
-
-project_workflow = build_project_workflow()
+        return ProjectWorkflowResult(
+            requirements=requirements,
+            project_plan=project_plan,
+            architecture=architecture,
+            review=review,
+        )

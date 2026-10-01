@@ -1,5 +1,6 @@
 from app.core.execution.runner import AgentRunner
 from app.core.llm.client import LocalLLMClient
+from app.core.model_config import PROJECT_PLANNER_MODEL
 from app.core.traceability.requirements import RequirementRegistry
 
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
@@ -9,15 +10,15 @@ from .quality import ProjectPlanQualityController
 from .schemas import ProjectPlan
 
 
-MODEL_NAME = "qwen3:4b"
+MODEL_NAME = PROJECT_PLANNER_MODEL
 
 
 class ProjectPlanner:
     """
     Project Planner Agent.
 
-    Converts a validated RequirementAnalysis artifact into a validated
-    ProjectPlan using canonical requirement IDs for traceability.
+    Converts a validated RequirementAnalysis artifact
+    into a validated, requirement-traceable ProjectPlan.
     """
 
     def __init__(
@@ -26,7 +27,7 @@ class ProjectPlanner:
         max_attempts: int = 2,
     ):
         self.llm_client = LocalLLMClient(
-            model_name=model_name
+            model_name=model_name,
         )
 
         self.quality_controller = (
@@ -54,39 +55,53 @@ class ProjectPlanner:
             requirements
         )
 
-        planner_context = self._build_planner_context(
-            requirements,
-            registry,
+        context = {
+            "project_name": requirements.project_name,
+            "objective": requirements.objective,
+            "user_roles": requirements.user_roles,
+            "functional_requirements": registry.to_prompt_text(),
+            "non_functional_requirements": (
+                requirements.non_functional_requirements
+            ),
+            "constraints": requirements.constraints,
+            "assumptions": requirements.assumptions,
+        }
+
+        base_user_prompt = USER_PROMPT_TEMPLATE.format(
+            context=context
         )
 
         def execute(
             previous_error: str | None,
         ) -> ProjectPlan:
 
-            user_prompt = USER_PROMPT_TEMPLATE.format(
-                context=planner_context
-            )
+            user_prompt = base_user_prompt
 
             if previous_error:
                 user_prompt += f"""
 
-The previous ProjectPlan was rejected by deterministic validation.
+PREVIOUS VALIDATION FEEDBACK
+----------------------------
+The previous ProjectPlan was rejected by the quality controller.
 
-Validation feedback:
+Validation error:
 {previous_error}
 
 Regenerate the COMPLETE ProjectPlan.
 
-Correct only the reported validation problems.
+Fix the validation problem directly.
 
 Remember:
-- Use canonical requirement IDs only.
-- Every milestone needs requirement_refs.
-- Every task needs requirement_refs.
-- Every task reference must belong to its parent milestone.
-- Every functional requirement must be covered.
-- Do not invent product capabilities.
-- Do not add implementation details that are absent from the requirements.
+- Every milestone must contain at least one requirement_refs entry.
+- Every task must contain at least one requirement_refs entry.
+- Every requirement reference must use canonical IDs such as FR-001.
+- Every task reference must belong to its parent milestone references.
+- Every functional requirement must be covered by at least one milestone.
+- Do not invent new functional requirements.
+- Keep tasks implementation-agnostic.
+- Do not introduce APIs, technologies, or advanced features as requirements.
+
+Return only the corrected ProjectPlan JSON.
 """
 
             plan = self.llm_client.generate_structured(
@@ -103,59 +118,4 @@ Remember:
 
         return self.runner.run(
             execute
-        )
-
-    @staticmethod
-    def _build_planner_context(
-        requirements: RequirementAnalysis,
-        registry: RequirementRegistry,
-    ) -> str:
-
-        sections = [
-            (
-                "PROJECT NAME\n"
-                f"{requirements.project_name}"
-            ),
-            (
-                "OBJECTIVE\n"
-                f"{requirements.objective}"
-            ),
-            (
-                "USER ROLES\n"
-                + (
-                    "\n".join(
-                        f"- {role}"
-                        for role in requirements.user_roles
-                    )
-                    if requirements.user_roles
-                    else "None explicitly identified."
-                )
-            ),
-            registry.to_prompt_text(),
-            (
-                "NON-FUNCTIONAL REQUIREMENTS\n"
-                + (
-                    "\n".join(
-                        f"- {item}"
-                        for item in requirements.non_functional_requirements
-                    )
-                    if requirements.non_functional_requirements
-                    else "None explicitly stated."
-                )
-            ),
-            (
-                "CONSTRAINTS\n"
-                + (
-                    "\n".join(
-                        f"- {item}"
-                        for item in requirements.constraints
-                    )
-                    if requirements.constraints
-                    else "None explicitly stated."
-                )
-            ),
-        ]
-
-        return "\n\n".join(
-            sections
         )
