@@ -8,27 +8,43 @@ from app.api.routes.requirements import router as requirements_router
 app = FastAPI(
     title="AI Development Studio",
     description=(
-        "Multi-Agent AI Software Engineering Platform"
+        "Multi-Agent AI Software Engineering Platform "
+        "for transforming software ideas into validated "
+        "engineering artifacts."
     ),
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
-app.include_router(requirements_router)
-app.include_router(planner_router)
-app.include_router(projects_router)
+app.include_router(
+    requirements_router
+)
+
+app.include_router(
+    planner_router
+)
+
+app.include_router(
+    projects_router
+)
 
 
-@app.get("/")
+@app.get(
+    "/",
+    tags=["System"],
+)
 async def root():
     return {
         "name": "AI Development Studio",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "status": "running",
     }
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["System"],
+)
 async def health():
     return {
         "status": "healthy",
