@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any, Callable
 
 from app.agents.requirement_analyst.agent import RequirementAnalyst
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
@@ -12,12 +13,9 @@ from app.agents.software_architect.schemas import SystemArchitecture
 from app.agents.technical_reviewer.agent import TechnicalReviewer
 from app.agents.technical_reviewer.schemas import ReviewReport
 
-from app.core.model_config import (
-    REQUIREMENT_ANALYST_MODEL,
-    PROJECT_PLANNER_MODEL,
-    SOFTWARE_ARCHITECT_MODEL,
-    TECHNICAL_REVIEWER_MODEL,
-)
+
+StageCallback = Callable[[str, str], None]
+ArtifactCallback = Callable[[str, Any], None]
 
 
 @dataclass
@@ -50,32 +48,79 @@ class ProjectWorkflow:
       -> Project Plan
       -> System Architecture
       -> Technical Review
+
+    Stage callbacks expose live progress.
+    Artifact callbacks publish each completed artifact immediately.
     """
 
     def __init__(
         self,
-        requirement_model: str = REQUIREMENT_ANALYST_MODEL,
-        planner_model: str = PROJECT_PLANNER_MODEL,
-        architect_model: str = SOFTWARE_ARCHITECT_MODEL,
-        reviewer_model: str = TECHNICAL_REVIEWER_MODEL,
+        requirement_model: str | None = None,
+        planner_model: str | None = None,
+        architect_model: str | None = None,
+        reviewer_model: str | None = None,
     ):
+        requirement_kwargs = {}
+
+        if requirement_model is not None:
+            requirement_kwargs["model_name"] = requirement_model
+
+        planner_kwargs = {}
+
+        if planner_model is not None:
+            planner_kwargs["model_name"] = planner_model
+
+        architect_kwargs = {}
+
+        if architect_model is not None:
+            architect_kwargs["model_name"] = architect_model
+
+        reviewer_kwargs = {}
+
+        if reviewer_model is not None:
+            reviewer_kwargs["model_name"] = reviewer_model
+
         self.requirement_agent = RequirementAnalyst(
-            model_name=requirement_model
+            **requirement_kwargs
         )
 
         self.planner_agent = ProjectPlanner(
-            model_name=planner_model
+            **planner_kwargs
         )
 
         self.architect_agent = SoftwareArchitect(
-            model_name=architect_model
+            **architect_kwargs
         )
 
         self.reviewer_agent = TechnicalReviewer(
-            model_name=reviewer_model
+            **reviewer_kwargs
         )
 
-    def run(self, idea: str) -> ProjectWorkflowResult:
+    @staticmethod
+    def _emit_stage(
+        callback: StageCallback | None,
+        stage: str,
+        status: str,
+    ) -> None:
+        if callback is not None:
+            callback(stage, status)
+
+    @staticmethod
+    def _emit_artifact(
+        callback: ArtifactCallback | None,
+        stage: str,
+        artifact: Any,
+    ) -> None:
+        if callback is not None:
+            callback(stage, artifact)
+
+    def run(
+        self,
+        idea: str,
+        on_stage: StageCallback | None = None,
+        on_artifact: ArtifactCallback | None = None,
+    ) -> ProjectWorkflowResult:
+
         if not idea or not idea.strip():
             raise ValueError(
                 "Software idea cannot be empty."
@@ -83,27 +128,143 @@ class ProjectWorkflow:
 
         cleaned_idea = idea.strip()
 
-        print("\n=== WORKFLOW: REQUIREMENTS ===")
-        requirements = self.requirement_agent.analyze(
-            cleaned_idea
+        # -------------------------------------------------
+        # REQUIREMENTS
+        # -------------------------------------------------
+
+        self._emit_stage(
+            on_stage,
+            "requirements",
+            "running",
         )
 
-        print("\n=== WORKFLOW: PROJECT PLAN ===")
-        project_plan = self.planner_agent.plan(
-            requirements
+        try:
+            requirements = self.requirement_agent.analyze(
+                cleaned_idea
+            )
+        except Exception:
+            self._emit_stage(
+                on_stage,
+                "requirements",
+                "failed",
+            )
+            raise
+
+        self._emit_stage(
+            on_stage,
+            "requirements",
+            "completed",
         )
 
-        print("\n=== WORKFLOW: ARCHITECTURE ===")
-        architecture = self.architect_agent.design(
+        self._emit_artifact(
+            on_artifact,
+            "requirements",
             requirements,
+        )
+
+        # -------------------------------------------------
+        # PROJECT PLAN
+        # -------------------------------------------------
+
+        self._emit_stage(
+            on_stage,
+            "project_plan",
+            "running",
+        )
+
+        try:
+            project_plan = self.planner_agent.plan(
+                requirements
+            )
+        except Exception:
+            self._emit_stage(
+                on_stage,
+                "project_plan",
+                "failed",
+            )
+            raise
+
+        self._emit_stage(
+            on_stage,
+            "project_plan",
+            "completed",
+        )
+
+        self._emit_artifact(
+            on_artifact,
+            "project_plan",
             project_plan,
         )
 
-        print("\n=== WORKFLOW: TECHNICAL REVIEW ===")
-        review = self.reviewer_agent.review(
-            requirements,
-            project_plan,
+        # -------------------------------------------------
+        # ARCHITECTURE
+        # -------------------------------------------------
+
+        self._emit_stage(
+            on_stage,
+            "architecture",
+            "running",
+        )
+
+        try:
+            architecture = self.architect_agent.design(
+                requirements,
+                project_plan,
+            )
+        except Exception:
+            self._emit_stage(
+                on_stage,
+                "architecture",
+                "failed",
+            )
+            raise
+
+        self._emit_stage(
+            on_stage,
+            "architecture",
+            "completed",
+        )
+
+        self._emit_artifact(
+            on_artifact,
+            "architecture",
             architecture,
+        )
+
+        # -------------------------------------------------
+        # TECHNICAL REVIEW
+        # -------------------------------------------------
+
+        self._emit_stage(
+            on_stage,
+            "technical_review",
+            "running",
+        )
+
+        try:
+            review = self.reviewer_agent.review(
+                requirements,
+                project_plan,
+                architecture,
+            )
+        except Exception:
+            self._emit_stage(
+                on_stage,
+                "technical_review",
+                "failed",
+            )
+            raise
+
+        self._emit_stage(
+            on_stage,
+            "technical_review",
+            "completed",
+        )
+
+        self._emit_artifact(
+            on_artifact,
+            "technical_review",
+            review,
         )
 
         return ProjectWorkflowResult(
