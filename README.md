@@ -141,3 +141,19 @@ The frontend and backend are separate deployment concerns.
 ## License
 
 This project is distributed under the MIT License. See [LICENSE](LICENSE).
+
+
+## Project memory and workspace restoration
+
+- **Project Memory** stores project-scoped notes, constraints, design decisions,
+  references, and code excerpts using the project-context API.
+- The next **Run All Again** supplies up to eight saved sources (bounded to 12,000
+  characters) as secondary context to requirement analysis. The current brief
+  and explicit constraints take precedence over conflicting saved context.
+- The browser remembers the last project, selected artifact, and scroll position.
+  Browser storage cannot recover server-side records that have been lost.
+- Render Free uses an ephemeral filesystem. Use durable database/storage before
+  relying on projects surviving backend restarts and redeploys.
+- Project-context vector indexing is opt-in with `ENABLE_PROJECT_CONTEXT_RAG=true`.
+  It is disabled by default on low-memory hosting; saved text still works as
+  context for the full workflow without a vector index.

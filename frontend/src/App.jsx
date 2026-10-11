@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import ProjectMemoryPanel from "./components/ProjectMemoryPanel";
 
 const API_BASE = "/api/v1";
 
@@ -48,6 +49,27 @@ const STAGE_LABELS = {
 const DEFAULT_IDEA =
   "Build an online food delivery platform where customers can discover restaurants, browse menus, place orders, make payments, and track deliveries.";
 
+const VALID_ARTIFACT_KEYS = new Set(["requirements", "project_plan", "architecture", "review"]);
+
+function safeStorageRead(key) {
+  try { return window.localStorage.getItem(key); } catch { return null; }
+}
+function safeStorageWrite(key, value) {
+  try { window.localStorage.setItem(key, value); } catch { /* storage may be unavailable */ }
+}
+function safeStorageRemove(key) {
+  try { window.localStorage.removeItem(key); } catch { /* storage may be unavailable */ }
+}
+function restoreScrollPosition(projectId) {
+  const raw = safeStorageRead(`specra:scroll:${projectId}`);
+  if (raw === null) return;
+  const scrollY = Number(raw);
+  if (!Number.isFinite(scrollY) || scrollY < 0) return;
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    window.scrollTo({ top: scrollY, left: 0, behavior: "auto" });
+  }));
+}
+
 function App() {
   const [idea, setIdea] = useState("");
   const [project, setProject] = useState(null);
@@ -76,6 +98,9 @@ function App() {
 
   const [showEvents, setShowEvents] =
     useState(false);
+
+  const [showMemory, setShowMemory] = useState(false);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
 
   const [versions, setVersions] =
     useState({});
@@ -265,6 +290,7 @@ function App() {
     }
 
     setProject(data);
+    safeStorageWrite("specra:lastProjectId", projectId);
 
     return data;
   }
@@ -731,12 +757,13 @@ function App() {
     }
 
     setProject(data);
+    safeStorageWrite("specra:lastProjectId", data.project_id);
+    setWorkspaceReady(true);
+    setShowMemory(false);
     setArtifacts(null);
     setVersions({});
     setEvents([]);
-    setActiveArtifact(
-      "requirements"
-    );
+    setActiveArtifact("requirements");
 
     await fetchProjects();
 
@@ -1123,6 +1150,7 @@ function App() {
     }
 
     setError("");
+    setWorkspaceReady(false);
     setShowProjects(false);
     setShowVersions(false);
     setShowEvents(false);
@@ -1149,15 +1177,17 @@ function App() {
         projectId
       );
 
-      setIdea(
-        loaded.idea
+      const savedArtifact = safeStorageRead(
+        `specra:activeArtifact:${projectId}`
       );
-
-      setStatusMessage(
-        getStatusMessage(
-          loaded
-        )
+      setIdea(loaded.idea);
+      setActiveArtifact(
+        VALID_ARTIFACT_KEYS.has(savedArtifact) ? savedArtifact : "requirements"
       );
+      setWorkspaceReady(true);
+      setShowMemory(false);
+      setStatusMessage(getStatusMessage(loaded));
+      restoreScrollPosition(projectId);
     } catch (err) {
       setError(
         err instanceof Error
@@ -1201,6 +1231,27 @@ function App() {
     }
   }
 
+  async function rerunFullWorkflow() {
+    if (!project?.project_id || loading || refining) return;
+    setLoading(true);
+    setError("");
+    setStatusMessage("Starting a fresh workflow with saved project memory...");
+    setShowMemory(false);
+    try {
+      await startFullWorkflow(project.project_id);
+      await waitForProjectCompletion(project.project_id);
+      await fetchVersions(project.project_id);
+      await fetchEvents(project.project_id);
+      await fetchProjects();
+      setStatusMessage("Project workflow completed.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rerun the project workflow.");
+      setStatusMessage("");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function loadDemoIdea() {
     setIdea(
       DEFAULT_IDEA
@@ -1217,6 +1268,9 @@ function App() {
     }
 
     setProject(null);
+    setWorkspaceReady(false);
+    setShowMemory(false);
+    safeStorageRemove("specra:lastProjectId");
     setArtifacts(null);
     setIdea("");
     setVersions({});
@@ -2541,16 +2595,80 @@ function App() {
   }
 
   useEffect(() => {
-    fetchProjects().catch(
-      (err) => {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Could not load projects."
+    let cancelled = false;
+
+    async function bootstrapWorkspace() {
+      const savedProjectId = safeStorageRead("specra:lastProjectId");
+      try {
+        const availableProjects = await fetchProjects();
+        if (cancelled) return;
+        const exists = savedProjectId && availableProjects.some(
+          (item) => item.project_id === savedProjectId
         );
+        if (!exists) {
+          if (savedProjectId) safeStorageRemove("specra:lastProjectId");
+          setWorkspaceReady(false);
+          return;
+        }
+
+        const savedArtifact = safeStorageRead(
+          `specra:activeArtifact:${savedProjectId}`
+        );
+        try {
+          const loaded = await fetchProject(savedProjectId);
+          await fetchArtifacts(savedProjectId);
+          await fetchVersions(savedProjectId);
+          await fetchEvents(savedProjectId);
+          if (cancelled) return;
+          setIdea(loaded.idea);
+          setActiveArtifact(
+            VALID_ARTIFACT_KEYS.has(savedArtifact) ? savedArtifact : "requirements"
+          );
+          setStatusMessage(getStatusMessage(loaded));
+          setWorkspaceReady(true);
+          restoreScrollPosition(savedProjectId);
+        } catch {
+          safeStorageRemove("specra:lastProjectId");
+          setProject(null);
+          setArtifacts(null);
+          setWorkspaceReady(false);
+          setError("The last project is no longer available from the backend. It may have been lost during a server restart or redeploy.");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load projects.");
+        }
       }
-    );
+    }
+
+    bootstrapWorkspace();
+    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!workspaceReady || !project?.project_id) return;
+    safeStorageWrite(`specra:activeArtifact:${project.project_id}`, activeArtifact);
+  }, [workspaceReady, project?.project_id, activeArtifact]);
+
+  useEffect(() => {
+    if (!workspaceReady || !project?.project_id) return;
+    const projectId = project.project_id;
+    const key = `specra:scroll:${projectId}`;
+    let pendingFrame = null;
+    const saveScroll = () => {
+      pendingFrame = null;
+      safeStorageWrite(key, String(window.scrollY));
+    };
+    const onScroll = () => {
+      if (pendingFrame === null) pendingFrame = window.requestAnimationFrame(saveScroll);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame);
+      safeStorageWrite(key, String(window.scrollY));
+    };
+  }, [workspaceReady, project?.project_id]);
 
   return (
     <div className="app-shell">
@@ -2980,6 +3098,23 @@ function App() {
 
                 <button
                   className="secondary-button"
+                  onClick={() => setShowMemory((current) => !current)}
+                  disabled={loading || refining}
+                >
+                  Project Memory
+                </button>
+
+                <button
+                  className="secondary-button"
+                  onClick={rerunFullWorkflow}
+                  disabled={loading || refining}
+                  title="Run all four agents again using saved project memory"
+                >
+                  {loading ? "Running..." : "Run All Again"}
+                </button>
+
+                <button
+                  className="secondary-button"
                   onClick={() => {
                     setShowEvents(
                       !showEvents
@@ -3015,6 +3150,14 @@ function App() {
                 </button>
               </div>
             </div>
+
+            {showMemory && project?.project_id && (
+              <ProjectMemoryPanel
+                apiBase={API_BASE}
+                projectId={project.project_id}
+                onClose={() => setShowMemory(false)}
+              />
+            )}
 
             {getStaleAgents().length >
               0 && (
