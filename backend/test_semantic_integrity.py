@@ -10,7 +10,10 @@ from app.agents.software_architect.schemas import (
 from app.agents.technical_reviewer.quality import TechnicalReviewQualityController
 from app.agents.technical_reviewer.schemas import RequirementCoverage, ReviewReport
 from app.core.traceability.requirements import RequirementRegistry
-from app.core.traceability.requirement_polarity import authentication_policy
+from app.core.traceability.requirement_polarity import (
+    authentication_policy,
+    contains_positive_authentication_mention,
+)
 
 
 REQUIREMENTS = RequirementAnalysis(
@@ -380,6 +383,12 @@ def test_explicit_no_auth_constraint_overrides_keyword_mentions() -> None:
     required, prohibited = authentication_policy(requirements)
     assert required is False
     assert prohibited is True
+    assert contains_positive_authentication_mention(
+        "Use an identity provider for login."
+    )
+    assert not contains_positive_authentication_mention(
+        "Do not add an identity provider."
+    )
 
     architecture = build_clean_architecture()
     architecture.authentication = "Required based on RequirementAnalysis"
@@ -393,6 +402,23 @@ def test_explicit_no_auth_constraint_overrides_keyword_mentions() -> None:
     else:
         raise AssertionError(
             "Architecture accepted authentication although the scope explicitly prohibits it."
+        )
+
+    clean_auth = build_clean_architecture()
+    clean_auth.authentication = "Not required based on current requirements"
+    clean_auth.architectural_assumptions = [
+        "Use an identity provider to manage user login."
+    ]
+    try:
+        ArchitectureQualityController._check_authentication_consistency(
+            clean_auth,
+            requirements,
+        )
+    except ValueError as exc:
+        assert "identity provider" in str(exc).casefold()
+    else:
+        raise AssertionError(
+            "Architecture accepted a positive identity-provider assumption despite an explicit prohibition."
         )
 
     report = build_clean_review()
