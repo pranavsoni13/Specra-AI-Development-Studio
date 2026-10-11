@@ -41,6 +41,14 @@ def _is_negated(segment: str) -> bool:
     ))
 
 
+def contains_positive_authentication_mention(text: str) -> bool:
+    """Whether text makes a positive authentication-related capability claim."""
+    return any(
+        AUTH_RE.search(segment) and not _is_negated(segment)
+        for segment in _segments(text)
+    )
+
+
 def authentication_policy(requirements) -> tuple[bool, bool]:
     """Return (authentication_required, authentication_prohibited).
 
