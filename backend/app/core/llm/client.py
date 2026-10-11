@@ -1,3 +1,4 @@
+import os
 from typing import Type, TypeVar
 
 import ollama
@@ -20,6 +21,25 @@ class LocalLLMClient:
         self.keep_alive = keep_alive
         self.debug = debug
 
+        # When OLLAMA_HOST is set, connect to that host explicitly. This lets
+        # deployments use the hosted Ollama API without requiring Ollama to be
+        # installed beside the backend. Local development remains unchanged.
+        host = os.getenv("OLLAMA_HOST", "").strip()
+        api_key = os.getenv("OLLAMA_API_KEY", "").strip()
+
+        if host:
+            headers = (
+                {"Authorization": f"Bearer {api_key}"}
+                if api_key
+                else {}
+            )
+            self._ollama_client = ollama.Client(
+                host=host,
+                headers=headers,
+            )
+        else:
+            self._ollama_client = ollama.Client()
+
     def generate_structured(
         self,
         system_prompt: str,
@@ -33,7 +53,7 @@ class LocalLLMClient:
         if not user_prompt.strip():
             raise ValueError("User prompt cannot be empty.")
 
-        response = ollama.chat(
+        response = self._ollama_client.chat(
             model=self.model_name,
             messages=[
                 {
