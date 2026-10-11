@@ -223,7 +223,7 @@ class TechnicalReviewQualityController:
             authentication_required,
             authentication_prohibited,
         )
-        cls._check_authentication_provenance(report, architecture, registry)
+        cls._check_authentication_provenance(report, architecture, registry, requirements)
         cls._check_realtime(report, requirement_text, architecture)
         cls._check_speculative_tracking_assumptions(
             report, requirement_text, architecture
@@ -369,6 +369,7 @@ class TechnicalReviewQualityController:
         report: ReviewReport,
         architecture: SystemArchitecture,
         registry: RequirementRegistry,
+        requirements: RequirementAnalysis,
     ) -> None:
         auth_terms = (
             "authentication", "authenticate", "login", "log in", "sign in", "signin",
@@ -387,6 +388,7 @@ class TechnicalReviewQualityController:
             "authentication is unnecessary",
         )
         support_terms = auth_terms + ("account", "identity", "protected data")
+        _, authentication_prohibited = authentication_policy(requirements)
 
         for decision in architecture.architecture_decisions:
             text = f"{decision.decision} {decision.rationale}".casefold()
@@ -399,19 +401,21 @@ class TechnicalReviewQualityController:
             supported = any(t in referenced for t in support_terms)
             explicit = any(p in text for p in explicit_claims)
             negative = any(p in text for p in negative_claims)
-            if not supported and (explicit or negative):
+            unsupported_positive_claim = explicit and not negative and not supported
+            unsupported_negative_claim = negative and not authentication_prohibited
+            if unsupported_positive_claim or unsupported_negative_claim:
                 cls._add_finding(
                     report,
                     ReviewFinding(
                         category="assumption",
                         severity="medium",
                         title="Architecture decision makes an unsupported authentication provenance claim",
-                        evidence=f"Decision '{decision.decision}' references {decision.related_requirements}, but those authoritative requirements do not establish authentication. The decision/rationale presents authentication as explicitly supported or explicitly ruled out.",
-                        recommendation="Rewrite the rationale as a technical choice or architectural assumption, or add an explicit authentication requirement if that is intended.",
+                        evidence=f"Decision '{decision.decision}' references {decision.related_requirements}, but its authentication claim is not supported by the authoritative requirement wording and polarity.",
+                        recommendation="Rewrite the rationale as a technical choice or architectural assumption, or align it with the explicit authentication constraint.",
                     ),
                     "An architecture decision incorrectly presents authentication as explicitly required or explicitly unrequired by the current requirements.",
                     "Authentication provenance was misrepresented in an architecture decision rationale.",
-                    "Correct the authentication decision rationale so requirement absence is not represented as an explicit negative or positive requirement claim.",
+                    "Correct the authentication decision rationale so its claim matches the authoritative requirement wording and polarity.",
                 )
 
     @staticmethod
