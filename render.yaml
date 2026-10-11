@@ -16,10 +16,10 @@ services:
       - key: OLLAMA_API_KEY
         sync: false
       - key: REQUIREMENT_ANALYST_MODEL
-        value: gpt-oss:20b-cloud
+        value: gemma4:cloud
       - key: PROJECT_PLANNER_MODEL
-        value: gpt-oss:20b-cloud
+        value: gemma4:cloud
       - key: SOFTWARE_ARCHITECT_MODEL
-        value: gpt-oss:20b-cloud
+        value: gemma4:cloud
       - key: TECHNICAL_REVIEWER_MODEL
-        value: gpt-oss:20b-cloud
+        value: gemma4:cloud
