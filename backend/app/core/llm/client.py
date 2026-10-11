@@ -1,8 +1,11 @@
+import json
 import os
+import re
 from typing import Type, TypeVar
+from urllib.parse import urlparse
 
 import ollama
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -21,11 +24,14 @@ class LocalLLMClient:
         self.keep_alive = keep_alive
         self.debug = debug
 
-        # When OLLAMA_HOST is set, connect to that host explicitly. This lets
-        # deployments use the hosted Ollama API without requiring Ollama to be
-        # installed beside the backend. Local development remains unchanged.
+        # When OLLAMA_HOST is set, connect to that host explicitly.
         host = os.getenv("OLLAMA_HOST", "").strip()
         api_key = os.getenv("OLLAMA_API_KEY", "").strip()
+        host_name = (urlparse(host).hostname or "").casefold() if host else ""
+        self._is_ollama_cloud = host_name in {
+            "ollama.com",
+            "www.ollama.com",
+        }
 
         if host:
             headers = (
@@ -46,26 +52,46 @@ class LocalLLMClient:
         user_prompt: str,
         output_schema: Type[T],
     ) -> T:
-
         if not system_prompt.strip():
             raise ValueError("System prompt cannot be empty.")
-
         if not user_prompt.strip():
             raise ValueError("User prompt cannot be empty.")
 
+        schema = output_schema.model_json_schema()
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        request_options = {}
+
+        if self._is_ollama_cloud:
+            # Ollama Cloud currently does not support the format/schema
+            # argument. Put the schema in the prompt and validate locally.
+            schema_text = json.dumps(
+                schema,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            messages[0]["content"] += (
+                "\n\nSTRICT OUTPUT CONTRACT:\n"
+                "Return exactly one JSON object matching the JSON Schema "
+                "provided in the user's message. Do not return Markdown, "
+                "code fences, reasoning, or commentary. Include every "
+                "required field using the correct JSON types. Do not add "
+                "fields that are not allowed by the schema."
+            )
+            messages[1]["content"] += (
+                "\n\nOUTPUT JSON SCHEMA (follow this schema exactly):\n"
+                f"{schema_text}\n"
+                "Return only the JSON object, with no surrounding text."
+            )
+        else:
+            # Local Ollama supports native constrained structured output.
+            request_options["format"] = schema
+
         response = self._ollama_client.chat(
             model=self.model_name,
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": user_prompt,
-                },
-            ],
-            format=output_schema.model_json_schema(),
+            messages=messages,
             think=False,
             stream=False,
             keep_alive=self.keep_alive,
@@ -73,30 +99,62 @@ class LocalLLMClient:
                 "temperature": 0,
                 "num_predict": self.num_predict,
             },
+            **request_options,
         )
 
         content = response.message.content
-
         if not content:
-            raise RuntimeError(
-                "LLM returned an empty response."
-            )
+            raise RuntimeError("LLM returned an empty response.")
 
         if self.debug:
             self._print_metrics(
                 response=response,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
+                system_prompt=messages[0]["content"],
+                user_prompt=messages[1]["content"],
                 output=content,
             )
 
+        return self._validate_output(content, output_schema)
+
+    @staticmethod
+    def _validate_output(content: str, output_schema: Type[T]) -> T:
         try:
             return output_schema.model_validate_json(content)
         except Exception as exc:
-            raise RuntimeError(
-                "LLM returned content that could not be validated "
-                "against the requested output schema."
-            ) from exc
+            direct_error = exc
+
+        # Hosted models can add a preamble or Markdown fences. Extract JSON
+        # candidates, but accept only one that passes the original schema.
+        decoder = json.JSONDecoder()
+        validation_errors = []
+
+        for match in re.finditer(r"[{\[]", content):
+            try:
+                candidate, _ = decoder.raw_decode(content[match.start():])
+            except json.JSONDecodeError:
+                continue
+
+            if not isinstance(candidate, dict):
+                continue
+
+            try:
+                return output_schema.model_validate(candidate)
+            except ValidationError as exc:
+                validation_errors.append(exc)
+
+        if validation_errors:
+            latest = validation_errors[-1]
+            details = "; ".join(
+                f"{'.'.join(str(part) for part in item['loc']) or '<root>'}: "
+                f"{item['msg']}"
+                for item in latest.errors()[:8]
+            )
+        else:
+            details = "response was not valid JSON matching the expected object"
+
+        raise RuntimeError(
+            f"LLM output failed the {output_schema.__name__} schema: {details}"
+        ) from direct_error
 
     def _print_metrics(
         self,
@@ -105,50 +163,20 @@ class LocalLLMClient:
         user_prompt: str,
         output: str,
     ) -> None:
-
         prompt_chars = len(system_prompt) + len(user_prompt)
         output_chars = len(output)
-
-        prompt_eval_count = getattr(
-            response,
-            "prompt_eval_count",
-            None,
-        )
-
-        eval_count = getattr(
-            response,
-            "eval_count",
-            None,
-        )
-
-        prompt_eval_duration = getattr(
-            response,
-            "prompt_eval_duration",
-            None,
-        )
-
-        eval_duration = getattr(
-            response,
-            "eval_duration",
-            None,
-        )
-
-        total_duration = getattr(
-            response,
-            "total_duration",
-            None,
-        )
+        prompt_eval_count = getattr(response, "prompt_eval_count", None)
+        eval_count = getattr(response, "eval_count", None)
+        prompt_eval_duration = getattr(response, "prompt_eval_duration", None)
+        eval_duration = getattr(response, "eval_duration", None)
+        total_duration = getattr(response, "total_duration", None)
 
         def seconds(value):
-            if value is None:
-                return None
-
-            return value / 1_000_000_000
+            return None if value is None else value / 1_000_000_000
 
         prompt_seconds = seconds(prompt_eval_duration)
         generation_seconds = seconds(eval_duration)
         total_seconds = seconds(total_duration)
-
         generation_tps = None
 
         if eval_count and generation_seconds and generation_seconds > 0:
@@ -161,28 +189,14 @@ class LocalLLMClient:
 
         if prompt_eval_count is not None:
             print(f"Prompt tokens: {prompt_eval_count}")
-
         if eval_count is not None:
             print(f"Output tokens: {eval_count}")
-
         if prompt_seconds is not None:
-            print(
-                f"Prompt evaluation: {prompt_seconds:.2f}s"
-            )
-
+            print(f"Prompt evaluation: {prompt_seconds:.2f}s")
         if generation_seconds is not None:
-            print(
-                f"Generation: {generation_seconds:.2f}s"
-            )
-
+            print(f"Generation: {generation_seconds:.2f}s")
         if total_seconds is not None:
-            print(
-                f"Total Ollama time: {total_seconds:.2f}s"
-            )
-
+            print(f"Total Ollama time: {total_seconds:.2f}s")
         if generation_tps is not None:
-            print(
-                f"Generation speed: {generation_tps:.2f} tokens/sec"
-            )
-
+            print(f"Generation speed: {generation_tps:.2f} tokens/sec")
         print()
