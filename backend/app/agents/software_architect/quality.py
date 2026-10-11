@@ -2,7 +2,10 @@ from collections import Counter
 import re
 
 from app.core.traceability.requirements import RequirementRegistry
-from app.core.traceability.requirement_polarity import authentication_policy
+from app.core.traceability.requirement_polarity import (
+    authentication_policy,
+    contains_positive_authentication_mention,
+)
 
 from app.agents.project_planner.schemas import ProjectPlan
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
@@ -492,11 +495,27 @@ class ArchitectureQualityController:
         }
         selected_positive = selected not in explicit_none_values
 
-        if authentication_prohibited and selected_positive:
+        positive_authentication_fields = [
+            field_name
+            for field_name, field_value
+            in ArchitectureQualityController._architecture_text_fields(architecture)
+            if field_name != "authentication"
+            and contains_positive_authentication_mention(field_value)
+        ]
+
+        if authentication_prohibited and (
+            selected_positive or positive_authentication_fields
+        ):
+            offending = []
+            if selected_positive:
+                offending.append("authentication")
+            offending.extend(positive_authentication_fields)
             raise ValueError(
                 "SystemArchitecture violates an explicit constraint prohibiting "
-                "authentication. Remove the authentication approach and any "
-                "identity-provider assumptions."
+                "authentication. Remove positive authentication or identity-provider "
+                "claims from: "
+                + ", ".join(offending)
+                + "."
             )
 
         if authentication_required and not selected_positive:
