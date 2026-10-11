@@ -7,9 +7,9 @@ from app.api.routes.requirements import router as requirements_router
 
 
 app = FastAPI(
-    title="AI Development Studio",
+    title="Specra",
     description=(
-        "Multi-Agent AI Software Engineering Platform"
+        "AI Software Engineering Studio"
     ),
     version="0.1.0",
 )
@@ -35,7 +35,7 @@ app.include_router(
 @app.get("/")
 async def root():
     return {
-        "name": "AI Development Studio",
+        "name": "Specra",
         "version": "0.1.0",
         "status": "running",
     }
