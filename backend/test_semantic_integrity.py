@@ -415,7 +415,7 @@ def test_explicit_no_auth_constraint_overrides_keyword_mentions() -> None:
             requirements,
         )
     except ValueError as exc:
-        assert "identity provider" in str(exc).casefold()
+        assert "architectural_assumptions[0]" in str(exc).casefold()
     else:
         raise AssertionError(
             "Architecture accepted a positive identity-provider assumption despite an explicit prohibition."
