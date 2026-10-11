@@ -119,6 +119,7 @@ class ProjectWorkflow:
         idea: str,
         on_stage: StageCallback | None = None,
         on_artifact: ArtifactCallback | None = None,
+        project_context: str | None = None,
     ) -> ProjectWorkflowResult:
 
         if not idea or not idea.strip():
@@ -139,9 +140,15 @@ class ProjectWorkflow:
         )
 
         try:
-            requirements = self.requirement_agent.analyze(
-                cleaned_idea
-            )
+            if project_context and project_context.strip():
+                requirements = self.requirement_agent.analyze(
+                    cleaned_idea,
+                    project_context=project_context,
+                )
+            else:
+                requirements = self.requirement_agent.analyze(
+                    cleaned_idea
+                )
         except Exception:
             self._emit_stage(
                 on_stage,

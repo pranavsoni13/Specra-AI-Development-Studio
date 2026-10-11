@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from functools import lru_cache
+import os
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -154,7 +155,18 @@ def _rag_services():
     return indexer, retriever
 
 
+def _project_context_rag_enabled() -> bool:
+    return os.getenv(
+        "ENABLE_PROJECT_CONTEXT_RAG",
+        "false",
+    ).strip().casefold() in {"1", "true", "yes", "on"}
+
+
 def _index_context(record: dict) -> None:
+    # Sentence-transformer model loading is heavy for low-memory hosting.
+    # Saved text still feeds the full workflow when vector indexing is off.
+    if not _project_context_rag_enabled():
+        return
     indexer, _ = _rag_services()
     indexer.index_context(record)
 
@@ -163,11 +175,10 @@ def _delete_context_from_rag(
     project_id: str,
     context_id: str,
 ) -> None:
+    if not _project_context_rag_enabled():
+        return
     indexer, _ = _rag_services()
-    indexer.delete_context(
-        project_id,
-        context_id,
-    )
+    indexer.delete_context(project_id, context_id)
 
 
 # ============================================================
@@ -401,6 +412,17 @@ def rag_search_project_context(
     """
 
     _ensure_project(project_id)
+
+    if not _project_context_rag_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Semantic project-context search is disabled on this deployment. "
+                "Saved project memory is still used during the full workflow. "
+                "Set ENABLE_PROJECT_CONTEXT_RAG=true on a host with sufficient RAM "
+                "to enable vector indexing and retrieval."
+            ),
+        )
 
     _, retriever = _rag_services()
 

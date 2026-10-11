@@ -10,6 +10,7 @@ from app.agents.requirement_analyst.schemas import RequirementAnalysis
 from app.agents.software_architect.schemas import SystemArchitecture
 from app.agents.technical_reviewer.schemas import ReviewReport
 
+from app.core.context_store import project_context_store
 from app.core.errors.exceptions import AgentExecutionError
 from app.core.refinement.service import ArtifactRefinementService
 from app.core.storage.project_store import (
@@ -496,6 +497,37 @@ def _update_artifact(
 # =========================================================
 
 
+MAX_PROJECT_CONTEXT_CHARS = 12000
+MAX_PROJECT_CONTEXT_SOURCES = 8
+
+
+def _format_project_context(project_id: str) -> str | None:
+    """Build a bounded, source-labelled memory block for the next full run."""
+    records = project_context_store.list_context(project_id)[:MAX_PROJECT_CONTEXT_SOURCES]
+    blocks: list[str] = []
+    remaining = MAX_PROJECT_CONTEXT_CHARS
+
+    for record in records:
+        name = str(record.get("name") or "Untitled source")
+        kind = str(record.get("kind") or "note")
+        content = str(record.get("content") or "").strip()
+        header = f"[Source: {name} | Type: {kind}]\n"
+        if not content or remaining <= len(header):
+            continue
+
+        body = content[: max(0, remaining - len(header))]
+        if len(body) < len(content):
+            body += "\n[Source clipped to fit the project-context limit.]"
+
+        block = header + body
+        blocks.append(block)
+        remaining -= len(block) + 2
+        if remaining <= 0:
+            break
+
+    return "\n\n".join(blocks) if blocks else None
+
+
 def _run_project_job(
     project_id: str,
 ) -> None:
@@ -511,9 +543,11 @@ def _run_project_job(
 
     try:
         workflow = ProjectWorkflow()
+        project_context = _format_project_context(project_id)
 
         result = workflow.run(
             project["idea"],
+            project_context=project_context,
             on_stage=lambda stage, stage_status: (
                 _update_stage(
                     project_id,

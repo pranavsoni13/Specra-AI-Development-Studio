@@ -32,6 +32,7 @@ class RequirementAnalyst:
     def analyze(
         self,
         idea: str,
+        project_context: str | None = None,
     ) -> RequirementAnalysis:
         """
         Analyze a software idea using the shared LLM client.
@@ -42,8 +43,14 @@ class RequirementAnalyst:
                 "Software idea cannot be empty."
             )
 
+        context_text = (
+            project_context.strip()
+            if project_context and project_context.strip()
+            else "No saved project context was supplied."
+        )
         user_prompt = USER_PROMPT_TEMPLATE.format(
-            idea=idea.strip()
+            idea=idea.strip(),
+            project_context=context_text,
         )
 
         analysis = self.llm_client.generate_structured(
