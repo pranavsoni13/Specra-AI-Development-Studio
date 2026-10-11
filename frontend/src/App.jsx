@@ -2662,9 +2662,14 @@ function App() {
     const onScroll = () => {
       if (pendingFrame === null) pendingFrame = window.requestAnimationFrame(saveScroll);
     };
+    const saveOnPageHide = () => {
+      safeStorageWrite(key, String(window.scrollY));
+    };
     window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("pagehide", saveOnPageHide);
     return () => {
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pagehide", saveOnPageHide);
       if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame);
       safeStorageWrite(key, String(window.scrollY));
     };
