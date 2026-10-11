@@ -5,7 +5,10 @@ from app.agents.project_planner.schemas import ProjectPlan
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
 from app.agents.software_architect.schemas import SystemArchitecture
 from app.core.traceability.requirements import RequirementRegistry
-from app.core.traceability.requirement_polarity import authentication_policy
+from app.core.traceability.requirement_polarity import (
+    authentication_policy,
+    contains_positive_authentication_mention,
+)
 
 from .schemas import ReviewFinding, ReviewReport
 
@@ -267,8 +270,18 @@ class TechnicalReviewQualityController:
             "not applicable by scope",
         }
         selected_positive = bool(selected) and selected not in none_values
+        positive_fields = [
+            field_name
+            for field_name, field_value in cls._architecture_fields(architecture)
+            if field_name != "authentication"
+            and contains_positive_authentication_mention(field_value)
+        ]
 
-        if prohibited and selected_positive:
+        if prohibited and (selected_positive or positive_fields):
+            offending = []
+            if selected_positive:
+                offending.append("authentication")
+            offending.extend(positive_fields)
             cls._add_finding(
                 report,
                 ReviewFinding(
@@ -277,7 +290,9 @@ class TechnicalReviewQualityController:
                     title="Authentication contradicts an explicit scope constraint",
                     evidence=(
                         "RequirementAnalysis explicitly prohibits authentication, "
-                        f"but SystemArchitecture selects '{architecture.authentication}'."
+                        "but SystemArchitecture contains positive authentication claims in: "
+                        + ", ".join(offending)
+                        + "."
                     ),
                     recommendation=(
                         "Remove authentication, login, credentials, authorization, "
