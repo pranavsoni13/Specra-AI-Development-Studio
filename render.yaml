@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: specra-api-pranavsoni13
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: OLLAMA_HOST
+        value: https://ollama.com
+      - key: OLLAMA_API_KEY
+        sync: false
+      - key: REQUIREMENT_ANALYST_MODEL
+        value: gemma4:31b
+      - key: PROJECT_PLANNER_MODEL
+        value: gemma4:31b
+      - key: SOFTWARE_ARCHITECT_MODEL
+        value: gemma4:31b
+      - key: TECHNICAL_REVIEWER_MODEL
+        value: gemma4:31b
