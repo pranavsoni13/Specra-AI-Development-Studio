@@ -49,11 +49,17 @@ Specra-AI-Development-Studio/
 │   ├── src/
 │   ├── package.json
 │   └── vite.config.js
-├── docs/
-├── scripts/
-├── tests/
+├── docs/                  # Architecture and deployment notes
+├── knowledge/documents/   # Shared engineering reference corpus
+├── scripts/               # Local developer utilities
+├── render.yaml
 └── README.md
 ```
+
+Deterministic Python contract tests live in `backend/test_*.py` so they run with
+the backend package on the Python import path. The runtime project workflow is
+implemented in `backend/app/workflows/`; there are no separate root-level
+workflow or memory modules.
 
 ## Run locally
 
