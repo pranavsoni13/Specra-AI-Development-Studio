@@ -2557,12 +2557,12 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">
-            AD
+            S
           </div>
 
           <div>
             <div className="brand-name">
-              AI Development Studio
+              Specra
             </div>
 
             <div className="brand-subtitle">
@@ -3646,11 +3646,11 @@ function App() {
 
       <footer className="footer">
         <div>
-          AI Development Studio
+          Specra
         </div>
 
         <div>
-          Local AI • FastAPI • React
+          AI Engineering • FastAPI • React
         </div>
       </footer>
     </div>
