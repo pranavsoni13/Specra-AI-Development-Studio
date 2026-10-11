@@ -8,11 +8,6 @@ from pydantic import BaseModel, Field
 
 from app.core.context_store import project_context_store
 from app.core.storage.project_store import project_store
-from app.rag.embeddings import LocalEmbeddingModel
-from app.rag.project_context_rag import (
-    ProjectContextIndexer,
-    ProjectKnowledgeRetriever,
-)
 
 
 router = APIRouter(
@@ -130,15 +125,19 @@ class ProjectContextRAGSearchResponse(BaseModel):
 
 
 @lru_cache(maxsize=1)
-def _rag_services() -> tuple[
-    ProjectContextIndexer,
-    ProjectKnowledgeRetriever,
-]:
+def _rag_services():
     """
     Lazily create project-context RAG services.
 
-    One embedding model instance is shared by indexing and retrieval.
+    Heavy embedding/vector-store dependencies load only when a semantic
+    context endpoint is used, keeping ordinary API startup lightweight.
     """
+
+    from app.rag.embeddings import LocalEmbeddingModel
+    from app.rag.project_context_rag import (
+        ProjectContextIndexer,
+        ProjectKnowledgeRetriever,
+    )
 
     embedding_model = LocalEmbeddingModel()
 
