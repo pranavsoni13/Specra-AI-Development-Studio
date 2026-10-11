@@ -79,3 +79,8 @@ def test_local_ollama_keeps_native_json_schema_mode():
             call = fake_client.chat.call_args
             assert call.kwargs["format"] == ExampleArtifact.model_json_schema()
             assert artifact.project_name == "Local demo"
+
+if __name__ == "__main__":
+    test_ollama_cloud_uses_prompt_schema_and_extracts_json()
+    test_local_ollama_keeps_native_json_schema_mode()
+    print("CLOUD STRUCTURED OUTPUT CONTRACT TEST: PASS")
