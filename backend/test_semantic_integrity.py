@@ -10,6 +10,7 @@ from app.agents.software_architect.schemas import (
 from app.agents.technical_reviewer.quality import TechnicalReviewQualityController
 from app.agents.technical_reviewer.schemas import RequirementCoverage, ReviewReport
 from app.core.traceability.requirements import RequirementRegistry
+from app.core.traceability.requirement_polarity import authentication_policy
 
 
 REQUIREMENTS = RequirementAnalysis(
@@ -368,6 +369,62 @@ def test_modal_tracking_assumption_is_reviewed_without_architect_retry() -> None
     assert report.recommended_actions
 
 
+def test_explicit_no_auth_constraint_overrides_keyword_mentions() -> None:
+    requirements = REQUIREMENTS.model_copy(
+        update={
+            "constraints": [
+                "No authentication. Do not add an identity provider."
+            ]
+        }
+    )
+    required, prohibited = authentication_policy(requirements)
+    assert required is False
+    assert prohibited is True
+
+    architecture = build_clean_architecture()
+    architecture.authentication = "Required based on RequirementAnalysis"
+    try:
+        ArchitectureQualityController._check_authentication_consistency(
+            architecture,
+            requirements,
+        )
+    except ValueError as exc:
+        assert "prohibiting authentication" in str(exc).casefold()
+    else:
+        raise AssertionError(
+            "Architecture accepted authentication although the scope explicitly prohibits it."
+        )
+
+    report = build_clean_review()
+    TechnicalReviewQualityController._check_authentication(
+        report,
+        architecture,
+        required,
+        prohibited,
+    )
+    assert report.overall_status == "NEEDS_REVISION"
+    assert any(
+        finding.severity == "critical"
+        and "explicit scope constraint" in finding.title.casefold()
+        for finding in report.findings
+    )
+
+
+def test_affirmative_auth_requirement_is_still_detected() -> None:
+    requirements = REQUIREMENTS.model_copy(
+        update={
+            "functional_requirements": [
+                *REQUIREMENTS.functional_requirements,
+                "Users must be able to log in with their credentials.",
+            ],
+            "constraints": [],
+        }
+    )
+    required, prohibited = authentication_policy(requirements)
+    assert required is True
+    assert prohibited is False
+
+
 def test_reviewer_ignores_neutral_authentication_sentinel() -> None:
     report = build_clean_review()
     report.findings.append(
@@ -432,6 +489,8 @@ def main() -> None:
     test_reviewer_does_not_flag_negated_tracking_mention()
     test_reviewer_flags_positive_unsupported_tracking_capability()
     test_modal_tracking_assumption_is_reviewed_without_architect_retry()
+    test_explicit_no_auth_constraint_overrides_keyword_mentions()
+    test_affirmative_auth_requirement_is_still_detected()
     test_reviewer_ignores_neutral_authentication_sentinel()
     test_unresolved_external_integration_has_action()
 
@@ -444,6 +503,7 @@ def main() -> None:
     print("Positive unsupported tracking: rejected")
     print("Modal tracking assumption: surfaced for confirmation")
     print("Neutral authentication sentinel: accepted")
+    print("Explicit no-auth constraint polarity: enforced")
     print("Unresolved integration: action generated")
     print("Reviewer polarity checks: PASS")
     print("======================================================================")
