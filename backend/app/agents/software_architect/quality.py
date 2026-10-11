@@ -2,6 +2,7 @@ from collections import Counter
 import re
 
 from app.core.traceability.requirements import RequirementRegistry
+from app.core.traceability.requirement_polarity import authentication_policy
 
 from app.agents.project_planner.schemas import ProjectPlan
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
@@ -476,35 +477,8 @@ class ArchitectureQualityController:
         architecture: SystemArchitecture,
         requirements: RequirementAnalysis,
     ) -> None:
-        requirement_text = " ".join(
-            [
-                requirements.objective,
-                *requirements.functional_requirements,
-                *requirements.non_functional_requirements,
-                *requirements.constraints,
-            ]
-        ).casefold()
-
-        authentication_required = any(
-            keyword in requirement_text
-            for keyword in (
-                "authentication",
-                "authenticate",
-                "login",
-                "log in",
-                "sign in",
-                "signin",
-                "signup",
-                "sign up",
-                "authorization",
-                "authorisation",
-                "password",
-                "credentials",
-                "access control",
-                "account",
-                "identity",
-                "protected data",
-            )
+        authentication_required, authentication_prohibited = (
+            authentication_policy(requirements)
         )
 
         selected = architecture.authentication.strip().casefold()
@@ -514,9 +488,16 @@ class ArchitectureQualityController:
             "not required based on current requirements",
             "no authentication",
             "no authentication required",
+            "not applicable by scope",
         }
-
         selected_positive = selected not in explicit_none_values
+
+        if authentication_prohibited and selected_positive:
+            raise ValueError(
+                "SystemArchitecture violates an explicit constraint prohibiting "
+                "authentication. Remove the authentication approach and any "
+                "identity-provider assumptions."
+            )
 
         if authentication_required and not selected_positive:
             raise ValueError(
@@ -524,7 +505,11 @@ class ArchitectureQualityController:
                 "SystemArchitecture does not provide an authentication approach."
             )
 
-        if not authentication_required and selected_positive:
+        if (
+            not authentication_required
+            and not authentication_prohibited
+            and selected_positive
+        ):
             assumption_text = " ".join(
                 architecture.architectural_assumptions
             ).casefold()
