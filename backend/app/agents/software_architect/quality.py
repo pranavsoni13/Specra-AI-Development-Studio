@@ -201,6 +201,10 @@ class ArchitectureQualityController:
             "protected data",
         )
 
+        authentication_required, authentication_prohibited = (
+            authentication_policy(requirements)
+        )
+
         requirement_text_by_id = {
             requirement_id: registry.text_for_id(requirement_id).casefold()
             for requirement_id in registry.ids
@@ -262,16 +266,22 @@ class ArchitectureQualityController:
                 for phrase in explicit_claim_phrases
             )
 
-            if (
-                (claims_explicit_support or unsupported_negative_claim)
+            positive_provenance_claim = (
+                claims_explicit_support
+                and not unsupported_negative_claim
                 and not supports_authentication_claim
-            ):
+            )
+            unsupported_negative_provenance = (
+                unsupported_negative_claim
+                and not authentication_prohibited
+            )
+
+            if positive_provenance_claim or unsupported_negative_provenance:
                 raise ValueError(
                     "Architecture decision makes an unsupported authentication "
-                    "requirement claim. The referenced requirements do not "
-                    "establish authentication, and absence of an authentication "
-                    "requirement must not be presented as an explicit negative "
-                    "requirement."
+                    "requirement claim. Positive claims must be grounded in the "
+                    "referenced requirements; negative claims are valid only when "
+                    "the requirements explicitly prohibit authentication."
                 )
 
     @staticmethod
