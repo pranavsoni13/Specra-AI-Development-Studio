@@ -2,6 +2,7 @@ from app.core.execution.runner import AgentRunner
 from app.core.llm.client import LocalLLMClient
 from app.core.model_config import SOFTWARE_ARCHITECT_MODEL
 from app.core.traceability.requirements import RequirementRegistry
+from app.core.traceability.requirement_polarity import authentication_policy
 
 from app.agents.project_planner.schemas import ProjectPlan
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
@@ -65,29 +66,8 @@ class SoftwareArchitect:
             requirements
         )
 
-        requirement_text = " ".join(
-            [
-                requirements.objective,
-                *requirements.functional_requirements,
-                *requirements.non_functional_requirements,
-                *requirements.constraints,
-            ]
-        ).casefold()
-
-        authentication_required = any(
-            term in requirement_text
-            for term in (
-                "authentication",
-                "authenticate",
-                "login",
-                "log in",
-                "signup",
-                "sign up",
-                "user account",
-                "user accounts",
-                "authorization",
-                "authorisation",
-            )
+        authentication_required, authentication_prohibited = (
+            authentication_policy(requirements)
         )
 
         requirement_context = {
@@ -105,6 +85,11 @@ class SoftwareArchitect:
             "authentication_required": (
                 "YES"
                 if authentication_required
+                else "NO"
+            ),
+            "authentication_prohibited": (
+                "YES"
+                if authentication_prohibited
                 else "NO"
             ),
         }
@@ -146,6 +131,17 @@ ARCHITECTURE OUTPUT EFFICIENCY RULES:
 - Do not repeat the same information across multiple fields.
 - Keep lists focused on the requirements and project plan.
 - Do not invent requirements, features, integrations, or behavior.
+"""
+
+        if authentication_prohibited:
+            base_user_prompt += """
+
+HARD SCOPE CONSTRAINT — AUTHENTICATION IS PROHIBITED:
+- Do not add authentication, login, signup, credentials, authorization,
+  accounts, JWT/OAuth, or an identity provider anywhere in the architecture.
+- Set authentication to "Not required based on current requirements".
+- Do not add identity/authentication assumptions or architecture decisions.
+- This explicit prohibition overrides incidental keyword mentions.
 """
 
         def execute(
