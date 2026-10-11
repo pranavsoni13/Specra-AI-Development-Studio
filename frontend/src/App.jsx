@@ -2574,7 +2574,7 @@ function App() {
         <div className="topbar-meta">
           <div className="status-dot">
             <span />
-            Local AI
+            Ollama Cloud
           </div>
 
           <button
