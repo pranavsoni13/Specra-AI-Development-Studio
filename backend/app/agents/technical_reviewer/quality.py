@@ -5,6 +5,7 @@ from app.agents.project_planner.schemas import ProjectPlan
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
 from app.agents.software_architect.schemas import SystemArchitecture
 from app.core.traceability.requirements import RequirementRegistry
+from app.core.traceability.requirement_polarity import authentication_policy
 
 from .schemas import ReviewFinding, ReviewReport
 
@@ -210,7 +211,15 @@ class TechnicalReviewQualityController:
                 *requirements.constraints,
             ]
         ).casefold()
-        cls._check_authentication(report, architecture, requirement_text)
+        authentication_required, authentication_prohibited = (
+            authentication_policy(requirements)
+        )
+        cls._check_authentication(
+            report,
+            architecture,
+            authentication_required,
+            authentication_prohibited,
+        )
         cls._check_authentication_provenance(report, architecture, registry)
         cls._check_realtime(report, requirement_text, architecture)
         cls._check_speculative_tracking_assumptions(
@@ -245,20 +254,41 @@ class TechnicalReviewQualityController:
         cls,
         report: ReviewReport,
         architecture: SystemArchitecture,
-        requirement_text: str,
+        required: bool,
+        prohibited: bool,
     ) -> None:
-        auth_terms = (
-            "authentication", "authenticate", "login", "log in", "sign in",
-            "signin", "signup", "sign up", "authorization", "authorisation",
-            "password", "credentials", "access control", "account", "identity",
-            "protected data",
-        )
-        required = any(t in requirement_text for t in auth_terms)
         selected = architecture.authentication.strip().casefold()
         none_values = {
-            "none", "not required", "not required based on current requirements",
-            "no authentication", "no authentication required",
+            "none",
+            "not required",
+            "not required based on current requirements",
+            "no authentication",
+            "no authentication required",
+            "not applicable by scope",
         }
+        selected_positive = bool(selected) and selected not in none_values
+
+        if prohibited and selected_positive:
+            cls._add_finding(
+                report,
+                ReviewFinding(
+                    category="architecture",
+                    severity="critical",
+                    title="Authentication contradicts an explicit scope constraint",
+                    evidence=(
+                        "RequirementAnalysis explicitly prohibits authentication, "
+                        f"but SystemArchitecture selects '{architecture.authentication}'."
+                    ),
+                    recommendation=(
+                        "Remove authentication, login, credentials, authorization, "
+                        "and identity-provider capabilities from the architecture."
+                    ),
+                ),
+                "SystemArchitecture violates an explicit authentication prohibition.",
+                "Authentication is an unsupported addition that conflicts with a scope constraint.",
+                "Regenerate the architecture without authentication or identity-provider assumptions.",
+            )
+            return
 
         if required and selected in none_values:
             cls._add_finding(
@@ -267,17 +297,35 @@ class TechnicalReviewQualityController:
                     category="architecture",
                     severity="high",
                     title="Authentication requirements are not architecturally covered",
-                    evidence="RequirementAnalysis contains authentication-related input, but SystemArchitecture selects an explicit no-authentication value.",
-                    recommendation="Provide an authentication approach that addresses the authoritative authentication-related requirements.",
+                    evidence=(
+                        "RequirementAnalysis contains an affirmative authentication "
+                        "requirement, but SystemArchitecture selects an explicit no-authentication value."
+                    ),
+                    recommendation=(
+                        "Provide an authentication approach that addresses the "
+                        "authoritative authentication-related requirements."
+                    ),
                 ),
                 "Authentication-related requirements are not represented by the selected authentication approach.",
                 "Authentication requirements are not architecturally covered.",
                 "Update the authentication architecture to satisfy the explicit authentication requirements.",
             )
 
-        if not required and selected and selected not in none_values:
-            assumptions = " ".join(architecture.architectural_assumptions).casefold()
-            labeled = any(t in assumptions for t in ("authentication", "login", "sign in", "credentials", "authorization", "access control"))
+        if not required and not prohibited and selected_positive:
+            assumptions = " ".join(
+                architecture.architectural_assumptions
+            ).casefold()
+            labeled = any(
+                term in assumptions
+                for term in (
+                    "authentication",
+                    "login",
+                    "sign in",
+                    "credentials",
+                    "authorization",
+                    "access control",
+                )
+            )
             if not labeled:
                 cls._add_finding(
                     report,
@@ -285,8 +333,15 @@ class TechnicalReviewQualityController:
                         category="assumption",
                         severity="medium",
                         title="Authentication introduced without explicit requirement support",
-                        evidence=f"SystemArchitecture selects '{architecture.authentication}', but RequirementAnalysis has no explicit authentication-related requirement and the choice is not labeled as an architectural assumption.",
-                        recommendation="Either obtain explicit authentication requirements or record the authentication choice as an architectural assumption.",
+                        evidence=(
+                            f"SystemArchitecture selects '{architecture.authentication}', "
+                            "but RequirementAnalysis has no affirmative authentication "
+                            "requirement and the choice is not labeled as an architectural assumption."
+                        ),
+                        recommendation=(
+                            "Either obtain explicit authentication requirements or "
+                            "record the authentication choice as an architectural assumption."
+                        ),
                     ),
                     "Authentication was introduced without explicit authentication-related requirements.",
                     "Authentication was introduced without explicit requirement support.",
