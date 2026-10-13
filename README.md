@@ -58,7 +58,7 @@ Set provider credentials only in your local environment or deployment secret set
 | `OPENROUTER_SOFTWARE_ARCHITECT_MODEL` | Optional model ID override for the Architect with OpenRouter. |
 | `OPENROUTER_TECHNICAL_REVIEWER_MODEL` | Optional model ID override for the Reviewer with OpenRouter. |
 
-Hosted defaults currently use `grok-4.7` for xAI and `openai/gpt-4o-mini` for OpenRouter. Provider-scoped model settings take precedence. Existing role-specific model settings remain active for Ollama to preserve the current local setup. Model availability and pricing can change; verify current provider documentation before choosing production defaults.
+Hosted defaults currently use `grok-4.7` for xAI and `x-ai/grok-4.7` for OpenRouter. Provider-scoped model settings take precedence. Existing role-specific model settings remain active for Ollama to preserve the current local setup. Model availability and pricing can change; verify current provider documentation before choosing production defaults.
 
 Example for xAI (set these in your terminal/session or deployment environment, not in source code):
 
