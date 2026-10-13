@@ -64,6 +64,7 @@ class ProjectStore:
         )
 
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
 
         return connection
 
