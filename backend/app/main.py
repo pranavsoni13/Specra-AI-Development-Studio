@@ -4,6 +4,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.testing import router as testing_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.copilot import router as copilot_router
+from app.api.routes.code_generation import router as code_generation_router
 from app.api.routes.context import router as context_router
 from app.api.routes.planner import router as planner_router
 from app.api.routes.projects import router as projects_router
@@ -33,6 +34,10 @@ app.include_router(
 
 app.include_router(
     copilot_router
+)
+
+app.include_router(
+    code_generation_router
 )
 
 app.include_router(
