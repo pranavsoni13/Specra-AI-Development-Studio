@@ -42,6 +42,12 @@ jobs:
       - name: Test Copilot HTTP routes and roles
         working-directory: backend
         run: python test_copilot_routes.py
+      - name: Test code-bundle safety and versioning
+        working-directory: backend
+        run: python test_code_generator.py
+      - name: Test code-generation API and ZIP download
+        working-directory: backend
+        run: python test_code_generation_routes.py
       - name: Import FastAPI application
         working-directory: backend
         run: python -c "from app.main import app; print(len(app.routes))"
