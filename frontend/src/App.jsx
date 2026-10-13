@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import ProjectMemoryPanel from "./components/ProjectMemoryPanel";
 import ProjectTeamPanel from "./ProjectTeamPanel";
 import ProjectTestingPanel from "./ProjectTestingPanel";
+import ProjectCopilotPanel from "./ProjectCopilotPanel";
 
 const API_BASE = "/api/v1";
 
@@ -104,6 +105,7 @@ function App({ currentUser }) {
   const [showMemory, setShowMemory] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
   const [showTesting, setShowTesting] = useState(false);
+  const [showCopilot, setShowCopilot] = useState(false);
   const [workspaceReady, setWorkspaceReady] = useState(false);
 
   const [versions, setVersions] =
@@ -2735,6 +2737,16 @@ function App({ currentUser }) {
               >
                 {showTesting ? "Close Testing" : "Testing & Docs"}
               </button>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setShowTeam(false);
+                  setShowTesting(false);
+                  setShowCopilot((value) => !value);
+                }}
+              >
+                {showCopilot ? "Close Copilot" : "AI Copilot"}
+              </button>
             </>
           )}
 
@@ -2763,6 +2775,22 @@ function App({ currentUser }) {
         <ProjectTestingPanel
           projectId={project.project_id}
           onClose={() => setShowTesting(false)}
+        />
+      )}
+
+      {showCopilot && project && (
+        <ProjectCopilotPanel
+          projectId={project.project_id}
+          onClose={() => setShowCopilot(false)}
+          onUseSuggestion={(proposal) => {
+            const target = proposal.target_artifact;
+            setActiveArtifact(target);
+            setRefinementMode(target);
+            setRefinementInstruction(proposal.suggested_instruction);
+            setShowCopilot(false);
+            setError("");
+            setStatusMessage("Copilot suggestion loaded for review. No artifact has changed yet.");
+          }}
         />
       )}
 
