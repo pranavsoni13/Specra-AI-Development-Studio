@@ -69,7 +69,7 @@ class ProviderModelConfigTests(unittest.TestCase):
         )
         self.assertEqual(
             config.REQUIREMENT_ANALYST_MODEL,
-            "openai/gpt-4o-mini",
+            "x-ai/grok-4.7",
         )
         self.assertEqual(
             config.SOFTWARE_ARCHITECT_MODEL,
