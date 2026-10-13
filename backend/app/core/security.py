@@ -252,6 +252,43 @@ class AuthStore:
                 )
             return cursor.rowcount > 0
 
+    def update_user(
+        self,
+        user_id: str,
+        *,
+        role: str | None = None,
+        is_active: bool | None = None,
+    ) -> dict | None:
+        if role is not None and role not in GLOBAL_ROLES:
+            raise ValueError(
+                f"Role must be one of: {', '.join(sorted(GLOBAL_ROLES))}."
+            )
+        updates: list[str] = []
+        values: list[object] = []
+        if role is not None:
+            updates.append("role = ?")
+            values.append(role)
+        if is_active is not None:
+            updates.append("is_active = ?")
+            values.append(1 if is_active else 0)
+        if not updates:
+            return self.get_user_by_id(user_id)
+
+        values.append(user_id)
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE users SET " + ", ".join(updates) + " WHERE user_id = ?",
+                tuple(values),
+            )
+            if cursor.rowcount == 0:
+                return None
+            if is_active is False:
+                connection.execute(
+                    "DELETE FROM user_sessions WHERE user_id = ?",
+                    (user_id,),
+                )
+        return self.get_user_by_id(user_id)
+
     def authenticate(self, email: str, password: str) -> dict | None:
         user = self.get_user_by_email(email)
         if not user or not bool(user["is_active"]):
