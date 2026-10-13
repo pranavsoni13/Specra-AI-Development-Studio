@@ -506,13 +506,33 @@ class AuthStore:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT u.user_id, u.email, u.display_name, pm.role, pm.created_at
+                SELECT
+                    u.user_id,
+                    u.email,
+                    u.display_name,
+                    'owner' AS role,
+                    p.created_at
+                FROM projects p
+                JOIN users u ON u.user_id = p.owner_id
+                WHERE p.project_id = ?
+
+                UNION ALL
+
+                SELECT
+                    u.user_id,
+                    u.email,
+                    u.display_name,
+                    pm.role,
+                    pm.created_at
                 FROM project_members pm
                 JOIN users u ON u.user_id = pm.user_id
+                JOIN projects p ON p.project_id = pm.project_id
                 WHERE pm.project_id = ?
-                ORDER BY pm.created_at ASC
+                  AND (p.owner_id IS NULL OR pm.user_id <> p.owner_id)
+
+                ORDER BY created_at ASC
                 """,
-                (project_id,),
+                (project_id, project_id),
             ).fetchall()
             return [dict(row) for row in rows]
 
