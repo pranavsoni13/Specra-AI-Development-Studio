@@ -41,5 +41,8 @@ jobs:
       - name: Validate LangGraph orchestration
         run: python -m pytest -q backend/test_workflow_graph.py
 
+      - name: Validate engineering document exports
+        run: python -m pytest -q backend/test_documents.py
+
       - name: Validate requirement traceability and artifact contracts
         run: python -m pytest -q backend/test_semantic_integrity.py backend/test_refinement_flow.py
