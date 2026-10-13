@@ -57,7 +57,8 @@ def generate_test_suite(project_id: str) -> dict:
             detail="Generate and save the requirements artifact before creating test cases.",
         )
     try:
-        suite = TestingAgent().generate(
+        agent = TestingAgent()
+        suite = agent.generate(
             requirements=requirements,
             project_plan=artifacts.get("project_plan"),
             architecture=artifacts.get("architecture"),
@@ -81,9 +82,7 @@ def generate_test_suite(project_id: str) -> dict:
     saved = test_store.save_suite(
         project_id=project_id,
         suite=suite.model_dump(),
-        generation_model=TestingAgent.__init__.__defaults__[0]
-        if TestingAgent.__init__.__defaults__
-        else None,
+        generation_model=agent.model_name,
     )
     return {"suite": saved, "project_status": project.get("status")}
 
