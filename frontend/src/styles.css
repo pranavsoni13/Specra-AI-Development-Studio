@@ -4704,3 +4704,62 @@ button:disabled {
     max-width: none;
   }
 }
+
+
+.auth-password-panel {
+  width: min(calc(100% - 32px), 680px);
+  margin: 18px auto;
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  background: rgba(15, 20, 32, 0.97);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.22);
+}
+
+.auth-password-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.auth-password-form label {
+  display: grid;
+  gap: 7px;
+  color: #c5cddd;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.auth-password-form input {
+  width: 100%;
+  min-width: 0;
+  color: #f0f3fc;
+  background: #0a0f1a;
+  border: 1px solid rgba(194, 205, 229, 0.18);
+  border-radius: 9px;
+  padding: 11px 12px;
+  outline: none;
+  font: inherit;
+  font-size: 13px;
+}
+
+.auth-password-form .auth-primary-button {
+  grid-column: span 2;
+}
+
+@media (max-width: 640px) {
+  .auth-password-panel {
+    padding: 16px;
+  }
+  .auth-password-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .auth-password-form .auth-primary-button {
+    grid-column: auto;
+  }
+}
