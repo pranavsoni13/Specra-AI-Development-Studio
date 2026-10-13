@@ -40,7 +40,9 @@ class AuthStoreTests(unittest.TestCase):
             self.auth.get_session_user(token)["user_id"],
             user["user_id"],
         )
-        self.assertNotEqual(token, self.auth._token_hash(token))
+        self.assertNotEqual(token, __import__(
+            "app.core.security", fromlist=["_token_hash"]
+        )._token_hash(token))
         with self.auth._connect() as connection:
             stored = connection.execute(
                 "SELECT session_hash FROM user_sessions"
