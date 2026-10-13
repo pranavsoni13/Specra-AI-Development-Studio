@@ -175,6 +175,81 @@ function AdminAccountsPanel({ onClose }) {
   );
 }
 
+function ChangePasswordPanel({ onClose, onChanged }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function changePassword(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiRequest("/api/v1/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setMessage(result.message || "Password updated.");
+      if (result.user) onChanged(result.user);
+    } catch (err) {
+      setError(err.message || "Could not update password.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="auth-password-panel">
+      <div className="auth-panel-heading">
+        <div>
+          <div className="auth-eyebrow">ACCOUNT SECURITY</div>
+          <h2>Change password</h2>
+          <p>Use a password with at least 12 characters. Other active sessions will be signed out.</p>
+        </div>
+        <button className="auth-secondary-button" onClick={onClose}>Close</button>
+      </div>
+      <form className="auth-password-form" onSubmit={changePassword}>
+        <label>
+          Current password
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            required
+            autoComplete="current-password"
+          />
+        </label>
+        <label>
+          New password
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            minLength={12}
+            maxLength={256}
+            required
+            autoComplete="new-password"
+          />
+        </label>
+        <button className="auth-primary-button" disabled={busy}>
+          {busy ? "Updating…" : "Update password"}
+        </button>
+      </form>
+      {message && <p className="auth-success" role="status">{message}</p>}
+      {error && <p className="auth-error" role="alert">{error}</p>}
+    </section>
+  );
+}
+
+
 export default function AuthGate({ children }) {
   const [status, setStatus] = useState("checking");
   const [user, setUser] = useState(null);
@@ -192,6 +267,7 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -274,6 +350,9 @@ export default function AuthGate({ children }) {
             <span className="auth-role-chip">{user.role}</span>
           </div>
           <div className="auth-session-actions">
+            <button className="auth-secondary-button" onClick={() => setShowPassword((value) => !value)}>
+              {showPassword ? "Close password" : "Change password"}
+            </button>
             {user.role === "admin" && (
               <button className="auth-secondary-button" onClick={() => setShowAccounts((value) => !value)}>
                 {showAccounts ? "Close accounts" : "Manage accounts"}
@@ -283,6 +362,12 @@ export default function AuthGate({ children }) {
           </div>
         </div>
         {showAccounts && user.role === "admin" && <AdminAccountsPanel onClose={() => setShowAccounts(false)} />}
+        {showPassword && (
+          <ChangePasswordPanel
+            onClose={() => setShowPassword(false)}
+            onChanged={setUser}
+          />
+        )}
         {typeof children === "function" ? children({ user }) : children}
       </div>
     );
