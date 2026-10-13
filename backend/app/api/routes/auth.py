@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hmac
 import os
-from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -50,21 +49,24 @@ class UserUpdateRequest(BaseModel):
     is_active: bool | None = None
 
 
-def _set_session_cookie(response: Response, token: str) -> None:
+def _cookie_secure() -> bool:
     secure_default = (
         "true"
         if os.getenv("RENDER") or os.getenv("APP_ENV", "").casefold() == "production"
         else "false"
     )
-    secure = os.getenv("AUTH_COOKIE_SECURE", secure_default).strip().casefold() in {
+    return os.getenv("AUTH_COOKIE_SECURE", secure_default).strip().casefold() in {
         "1", "true", "yes", "on"
     }
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         key=AUTH_COOKIE_NAME,
         value=token,
         max_age=SESSION_HOURS * 60 * 60,
         httponly=True,
-        secure=secure,
+        secure=_cookie_secure(),
         samesite="lax",
         path="/",
     )
@@ -166,10 +168,7 @@ def logout(
         key=AUTH_COOKIE_NAME,
         path="/",
         httponly=True,
-        secure=(
-            os.getenv("AUTH_COOKIE_SECURE", "").strip().casefold()
-            in {"1", "true", "yes", "on"}
-        ),
+        secure=_cookie_secure(),
         samesite="lax",
     )
     return {"message": "Signed out."}
