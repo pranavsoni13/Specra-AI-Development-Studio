@@ -163,3 +163,7 @@ This project is distributed under the MIT License. See [LICENSE](LICENSE).
 - Project-context vector indexing is opt-in with `ENABLE_PROJECT_CONTEXT_RAG=true`.
   It is disabled by default on low-memory hosting; saved text still works as
   context for the full workflow without a vector index.
+
+## Blueprint Quality Lab
+
+Run deterministic checks against the saved engineering blueprint to identify functional requirements missing from the plan, architecture components, or API capabilities; unresolved requirement references; open clarification questions; and technical review findings. The result is a **blueprint consistency report**, not proof that generated application code has been executed. Use the Testing Workspace to design test cases, record execution evidence, and export an honest Test Report. Code Studio produces a reviewable project bundle for download; untrusted generated code is not executed inside the Specra API server.
