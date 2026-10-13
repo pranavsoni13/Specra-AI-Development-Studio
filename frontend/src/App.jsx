@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import ProjectMemoryPanel from "./components/ProjectMemoryPanel";
 import ProjectTeamPanel from "./ProjectTeamPanel";
 import ProjectTestingPanel from "./ProjectTestingPanel";
+import QualityLabPanel from "./components/QualityLabPanel";
 import ProjectCopilotPanel from "./ProjectCopilotPanel";
 import CodeStudioPanel from "./CodeStudioPanel";
 
@@ -3662,6 +3663,8 @@ function App({ currentUser }) {
                 </div>
 
                 {renderArtifact()}
+
+                <QualityLabPanel projectId={project.project_id} />
 
                 {showVersions &&
                   renderVersionHistory()}
