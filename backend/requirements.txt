@@ -4,6 +4,7 @@ pydantic
 pydantic-settings
 python-dotenv
 ollama
+openai
 langgraph
 sentence-transformers
 chromadb

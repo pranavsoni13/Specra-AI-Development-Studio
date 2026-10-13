@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import ProjectMemoryPanel from "./components/ProjectMemoryPanel";
+import QualityLabPanel from "./components/QualityLabPanel";
 
 const API_BASE = "/api/v1";
 
@@ -81,6 +82,7 @@ function App() {
 
   const [loading, setLoading] = useState(false);
   const [refining, setRefining] = useState(false);
+  const [downloadingDocument, setDownloadingDocument] = useState("");
 
   const [statusMessage, setStatusMessage] =
     useState("");
@@ -248,6 +250,53 @@ function App() {
     }
 
     return `${label} is being generated...`;
+  }
+
+  async function downloadProjectDocument(documentType) {
+    if (!project?.project_id || downloadingDocument) return;
+
+    setDownloadingDocument(documentType);
+    setError("");
+    setStatusMessage("");
+
+    try {
+      const response = await fetch(
+        API_BASE + "/projects/" + project.project_id + "/documents/" + documentType
+      );
+
+      if (!response.ok) {
+        let detail = "Could not export this document.";
+        try {
+          const data = await response.json();
+          detail = data?.detail || detail;
+        } catch {
+          // The API may return an empty or non-JSON error body.
+        }
+        throw new Error(detail);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+      const projectSlug = (project.project_name || "specra-project")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = (filenameMatch && filenameMatch[1]) || (projectSlug + "-" + documentType + ".md");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+
+      setStatusMessage(documentType.toUpperCase() + " downloaded successfully.");
+    } catch (downloadError) {
+      setError(downloadError?.message || "Document export failed.");
+    } finally {
+      setDownloadingDocument("");
+    }
   }
 
   async function fetchProjects() {
@@ -3557,6 +3606,39 @@ function App() {
                 </div>
 
                 {renderArtifact()}
+
+                <QualityLabPanel projectId={project.project_id} />
+
+                <section className="document-export-panel" aria-label="Download engineering documents">
+                  <div className="document-export-copy">
+                    <div className="result-label">ENGINEERING DOCUMENTS</div>
+                    <strong>Export this blueprint</strong>
+                    <p>Download structured, editable Markdown documents based on the saved artifacts.</p>
+                  </div>
+                  <div className="document-export-actions">
+                    <button
+                      className="secondary-button"
+                      onClick={() => downloadProjectDocument("srs")}
+                      disabled={Boolean(downloadingDocument) || !artifacts?.requirements}
+                    >
+                      {downloadingDocument === "srs" ? "Preparing SRS…" : "Download SRS"}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      onClick={() => downloadProjectDocument("sdd")}
+                      disabled={Boolean(downloadingDocument) || !artifacts?.requirements}
+                    >
+                      {downloadingDocument === "sdd" ? "Preparing SDD…" : "Download SDD"}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      onClick={() => downloadProjectDocument("test-report")}
+                      disabled={Boolean(downloadingDocument) || !artifacts?.requirements}
+                    >
+                      {downloadingDocument === "test-report" ? "Preparing report…" : "Download Test Report"}
+                    </button>
+                  </div>
+                </section>
 
                 {showVersions &&
                   renderVersionHistory()}
