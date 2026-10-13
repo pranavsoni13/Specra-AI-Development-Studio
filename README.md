@@ -163,3 +163,22 @@ This project is distributed under the MIT License. See [LICENSE](LICENSE).
 - Project-context vector indexing is opt-in with `ENABLE_PROJECT_CONTEXT_RAG=true`.
   It is disabled by default on low-memory hosting; saved text still works as
   context for the full workflow without a vector index.
+
+## GenAI providers and model selection
+
+Specra supports multiple backend LLM providers through a shared client. Ollama remains the local development default. Optional hosted provider modes are available for xAI Grok and OpenRouter, allowing the team to compare models against the same Specra prompts without changing each agent's implementation.
+
+See [docs/LLM_PROVIDERS.md](docs/LLM_PROVIDERS.md) for environment variables and model ID formats. Put API keys only in the backend's local `.env` (ignored by Git) or backend hosting secrets. Never put provider keys in frontend/Vite environment variables or commit them.
+
+Choose the deployed model after benchmarking representative projects for requirement coverage, Pydantic validation rate, latency, token usage, and API cost. A model available in the Grok consumer app does not automatically include API credits.
+
+## Blueprint quality, test workspace, and downloadable documents
+
+- **Blueprint Quality Lab** checks requirements-to-plan/architecture/API traceability, unknown requirement references, open clarifications, and reviewer findings. This is a blueprint consistency assessment; it does not execute generated application code.
+- **Testing workspace** proposes requirement-linked test cases and tracks the result and execution notes entered by an authorized user. Proposed cases are not evidence of execution.
+- **Downloadable engineering documents** include SRS, SDD, and a Test Report. Reports distinguish blueprint proposals from recorded test outcomes.
+- **Code Studio / VS Code export** prepares a reviewable FastAPI + React/Vite starter bundle. Specra statically validates paths, secrets patterns, Python syntax, and JSON. It does not run model-generated code inside the API server; inspect the downloaded bundle before running it locally.
+
+## Project access and roles
+
+The authentication work adds sign-in and project membership roles for the people working on a project. The first administrator must be created through the configured bootstrap process, and protected API routes rely on project membership. Review [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md) and configure an appropriate bootstrap token and secure cookie settings before deploying the feature branch.
