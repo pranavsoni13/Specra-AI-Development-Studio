@@ -15,6 +15,8 @@ from app.agents.software_architect.schemas import SystemArchitecture
 from app.agents.technical_reviewer.agent import TechnicalReviewer
 from app.agents.technical_reviewer.schemas import ReviewReport
 
+from app.workflows.state import ProjectState
+
 
 StageCallback = Callable[[str, str], None]
 ArtifactCallback = Callable[[str, Any], None]
