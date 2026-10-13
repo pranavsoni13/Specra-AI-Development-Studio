@@ -49,10 +49,9 @@ class CodeGenerationQualityTests(unittest.TestCase):
         self.assertIn(".vscode/launch.json", by_path)
         self.assertIn(".vscode/tasks.json", by_path)
         self.assertIn("backend/tests/test_health.py", by_path)
-        self.assertIn("SPEC", "SPECra".upper())
         self.assertEqual(bundle.execution_status, "not_executed")
         self.assertEqual(bundle.validation_status, "static_checks_clear")
-        self.assertIn("not been run", by_path["SPEC​RA_CODEGEN_GUIDE.md"].content.lower())
+        self.assertIn("not been run", by_path["SPECra_CODEGEN_GUIDE.md"].content.lower())
 
     def test_invalid_json_manifest_is_replaced_with_safe_scaffold(self):
         bundle = self.controller.validate(
