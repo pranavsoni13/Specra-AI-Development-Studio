@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import ProjectMemoryPanel from "./components/ProjectMemoryPanel";
+import ProjectTeamPanel from "./ProjectTeamPanel";
 
 const API_BASE = "/api/v1";
 
@@ -70,7 +71,7 @@ function restoreScrollPosition(projectId) {
   }));
 }
 
-function App() {
+function App({ currentUser }) {
   const [idea, setIdea] = useState("");
   const [project, setProject] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -100,6 +101,7 @@ function App() {
     useState(false);
 
   const [showMemory, setShowMemory] = useState(false);
+  const [showTeam, setShowTeam] = useState(false);
   const [workspaceReady, setWorkspaceReady] = useState(false);
 
   const [versions, setVersions] =
@@ -2697,7 +2699,7 @@ function App() {
         <div className="topbar-meta">
           <div className="status-dot">
             <span />
-            Ollama Cloud
+            AI Provider
           </div>
 
           <button
@@ -2710,6 +2712,15 @@ function App() {
           >
             Projects
           </button>
+
+          {project && currentUser && (
+            <button
+              className="ghost-button"
+              onClick={() => setShowTeam((value) => !value)}
+            >
+              {showTeam ? "Close Team" : "Team"}
+            </button>
+          )}
 
           {project && (
             <button
@@ -2727,6 +2738,13 @@ function App() {
           )}
         </div>
       </header>
+
+      {showTeam && project && (
+        <ProjectTeamPanel
+          projectId={project.project_id}
+          onClose={() => setShowTeam(false)}
+        />
+      )}
 
       {showProjects && (
         <div className="projects-popover">
