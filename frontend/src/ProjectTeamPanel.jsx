@@ -131,7 +131,7 @@ export default function ProjectTeamPanel({ projectId, onClose }) {
                 <span>{member.email}</span>
               </div>
               <span className="auth-role-chip">{member.role}</span>
-              {canManage && (
+              {canManage && member.role !== "owner" && (
                 <button className="auth-secondary-button" onClick={() => removeMember(member.user_id)}>
                   Remove
                 </button>
