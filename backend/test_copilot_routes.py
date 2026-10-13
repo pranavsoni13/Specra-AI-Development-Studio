@@ -92,7 +92,7 @@ class CopilotRouteTests(unittest.TestCase):
 
         with patch(
             "app.api.routes.copilot.ProjectCopilotAgent.answer",
-            new=self.fake_answer,
+            new=lambda agent, **kwargs: self.fake_answer(**kwargs),
         ):
             first = self.client.post(
                 f"/api/v1/projects/{self.project_id}/copilot/ask",
@@ -141,7 +141,7 @@ class CopilotRouteTests(unittest.TestCase):
 
         with patch(
             "app.api.routes.copilot.ProjectCopilotAgent.answer",
-            new=self.fake_answer,
+            new=lambda agent, **kwargs: self.fake_answer(**kwargs),
         ):
             second = self.client.post(
                 f"/api/v1/projects/{self.project_id}/copilot/ask",
