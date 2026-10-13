@@ -214,8 +214,8 @@ export default function App() {{
           Continue implementing the approved requirements in the generated modules.
         </p>
         <div className="status-row">
-          <span className={`status-dot status-${health}`} />
-          <span>Backend status: <strong>{health}</strong></span>
+          <span className={{`status-dot status-${{health}}`}} />
+          <span>Backend status: <strong>{{health}}</strong></span>
         </div>
       </section>
     </main>
