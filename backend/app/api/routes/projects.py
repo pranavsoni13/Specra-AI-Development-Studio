@@ -2,8 +2,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, EmailStr, Field
+from typing import Literal
 
 from app.agents.project_planner.schemas import ProjectPlan
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
@@ -13,6 +14,13 @@ from app.agents.technical_reviewer.schemas import ReviewReport
 from app.core.context_store import project_context_store
 from app.core.errors.exceptions import AgentExecutionError
 from app.core.refinement.service import ArtifactRefinementService
+from app.core.security import (
+    auth_store,
+    get_current_user,
+    require_project_roles,
+    require_roles,
+    require_stage_role,
+)
 from app.core.storage.project_store import (
     STAGES,
     project_store,
@@ -23,6 +31,7 @@ from app.workflows.project_workflow import ProjectWorkflow
 router = APIRouter(
     prefix="/api/v1/projects",
     tags=["Projects"],
+    dependencies=[Depends(get_current_user)],
 )
 
 
@@ -56,6 +65,14 @@ class RefinementRequest(BaseModel):
         min_length=1,
         description="Natural-language refinement instruction.",
     )
+
+
+class ProjectMemberRequest(BaseModel):
+    email: EmailStr
+    role: Literal[
+        "analyst", "planner", "architect", "tester",
+        "reviewer", "developer", "viewer",
+    ] = "viewer"
 
 
 class ProjectSummary(BaseModel):
@@ -957,9 +974,11 @@ def _run_refinement_job(
     "",
     response_model=ProjectSummary,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles("analyst"))],
 )
 def create_project(
     request: ProjectCreateRequest,
+    current_user: dict = Depends(get_current_user),
 ) -> ProjectSummary:
 
     idea = request.idea.strip()
@@ -973,6 +992,7 @@ def create_project(
     project = project_store.create_project(
         project_id=str(uuid4()),
         idea=idea,
+        owner_id=current_user["user_id"],
     )
 
     return _build_summary(
@@ -991,10 +1011,13 @@ def create_project(
 )
 def list_projects(
     limit: int = 50,
+    current_user: dict = Depends(get_current_user),
 ) -> list[ProjectSummary]:
 
     projects = project_store.list_projects(
-        limit=limit
+        limit=limit,
+        user_id=current_user["user_id"],
+        is_admin=current_user["role"] == "admin",
     )
 
     return [
@@ -1014,6 +1037,7 @@ def list_projects(
     "/{project_id}/run",
     response_model=ProjectRunResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_project_roles("analyst"))],
 )
 def run_project(
     project_id: str,
@@ -1062,6 +1086,7 @@ def run_project(
     "/{project_id}/artifacts/{stage}/regenerate",
     response_model=ProjectRunResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_stage_role())],
 )
 def regenerate_artifact(
     project_id: str,
@@ -1178,6 +1203,7 @@ def regenerate_artifact(
     "/{project_id}/refine",
     response_model=ProjectRunResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_project_roles("analyst"))],
 )
 def refine_project(
     project_id: str,
@@ -1251,6 +1277,7 @@ def refine_project(
 @router.get(
     "/{project_id}",
     response_model=ProjectSummary,
+    dependencies=[Depends(require_project_roles())],
 )
 def get_project(
     project_id: str,
@@ -1273,6 +1300,7 @@ def get_project(
 @router.get(
     "/{project_id}/artifacts",
     response_model=ProjectArtifactResponse,
+    dependencies=[Depends(require_project_roles())],
 )
 def get_project_artifacts(
     project_id: str,
@@ -1295,6 +1323,7 @@ def get_project_artifacts(
 @router.get(
     "/{project_id}/versions",
     response_model=dict[str, list[ProjectVersionResponse]],
+    dependencies=[Depends(require_project_roles())],
 )
 def get_project_versions(
     project_id: str,
@@ -1347,6 +1376,7 @@ def get_project_versions(
 @router.get(
     "/{project_id}/events",
     response_model=list[ProjectEventResponse],
+    dependencies=[Depends(require_project_roles())],
 )
 def get_project_events(
     project_id: str,
@@ -1388,6 +1418,7 @@ def get_project_events(
 @router.delete(
     "/{project_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_project_roles("owner"))],
 )
 def delete_project(
     project_id: str,
@@ -1410,9 +1441,11 @@ def delete_project(
 @router.post(
     "/analyze",
     response_model=ProjectAnalysisResponse,
+    dependencies=[Depends(require_roles("analyst"))],
 )
 def analyze_project(
     request: ProjectAnalysisRequest,
+    current_user: dict = Depends(get_current_user),
 ) -> ProjectAnalysisResponse:
 
     idea = request.idea.strip()
@@ -1428,6 +1461,7 @@ def analyze_project(
     project_store.create_project(
         project_id=project_id,
         idea=idea,
+        owner_id=current_user["user_id"],
     )
 
     try:
@@ -1556,3 +1590,49 @@ def analyze_project(
             status_code=500,
             detail="Unexpected project analysis error.",
         ) from exc
+
+
+# =========================================================
+# Project team membership
+# =========================================================
+
+
+@router.get(
+    "/{project_id}/members",
+    dependencies=[Depends(require_project_roles())],
+)
+def list_project_members(project_id: str) -> dict:
+    _get_project(project_id)
+    return {"members": auth_store.list_project_members(project_id)}
+
+
+@router.post(
+    "/{project_id}/members",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_project_roles("owner"))],
+)
+def add_project_member(
+    project_id: str,
+    request: ProjectMemberRequest,
+) -> dict:
+    _get_project(project_id)
+    try:
+        member = auth_store.add_project_member(
+            project_id=project_id,
+            email=str(request.email),
+            role=request.role,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"member": member}
+
+
+@router.delete(
+    "/{project_id}/members/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_project_roles("owner"))],
+)
+def remove_project_member(project_id: str, user_id: str) -> None:
+    _get_project(project_id)
+    if not auth_store.remove_project_member(project_id, user_id):
+        raise HTTPException(status_code=404, detail="Project member not found.")
