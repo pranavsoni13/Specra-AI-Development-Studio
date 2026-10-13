@@ -1601,9 +1601,15 @@ def analyze_project(
     "/{project_id}/members",
     dependencies=[Depends(require_project_roles())],
 )
-def list_project_members(project_id: str) -> dict:
+def list_project_members(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     _get_project(project_id)
-    return {"members": auth_store.list_project_members(project_id)}
+    return {
+        "members": auth_store.list_project_members(project_id),
+        "my_role": auth_store.get_project_role(project_id, current_user),
+    }
 
 
 @router.post(
