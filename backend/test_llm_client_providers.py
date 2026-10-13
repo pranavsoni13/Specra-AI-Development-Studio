@@ -106,7 +106,7 @@ class LLMProviderClientTests(unittest.TestCase):
                 fake_response('{"message":"from router"}')
             )
             client = LocalLLMClient(
-                model_name="openai/gpt-4o-mini",
+                model_name="x-ai/grok-4.7",
                 debug=False,
             )
             result = client.generate_structured(
