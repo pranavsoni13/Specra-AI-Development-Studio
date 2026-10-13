@@ -7,3 +7,4 @@ ollama
 langgraph
 sentence-transformers
 chromadb
+email-validator
