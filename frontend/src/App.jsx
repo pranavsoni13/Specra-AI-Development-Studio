@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import ProjectMemoryPanel from "./components/ProjectMemoryPanel";
+import QualityLabPanel from "./components/QualityLabPanel";
 
 const API_BASE = "/api/v1";
 
@@ -3605,6 +3606,8 @@ function App() {
                 </div>
 
                 {renderArtifact()}
+
+                <QualityLabPanel projectId={project.project_id} />
 
                 <section className="document-export-panel" aria-label="Download engineering documents">
                   <div className="document-export-copy">
