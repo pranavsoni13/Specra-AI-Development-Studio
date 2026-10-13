@@ -35,20 +35,20 @@ def _configured_model(
 REQUIREMENT_ANALYST_MODEL: Final[str] = _configured_model(
     "REQUIREMENT_ANALYST_MODEL",
     "qwen3:1.7b",
-    "grok-4.7" if LLM_PROVIDER == "xai" else x-ai/grok-4.7,
+    "grok-4.7" if LLM_PROVIDER == "xai" else "x-ai/grok-4.7",
 )
 PROJECT_PLANNER_MODEL: Final[str] = _configured_model(
     "PROJECT_PLANNER_MODEL",
     "qwen3:4b",
-    "grok-4.7" if LLM_PROVIDER == "xai" else x-ai/grok-4.7,
+    "grok-4.7" if LLM_PROVIDER == "xai" else "x-ai/grok-4.7",
 )
 SOFTWARE_ARCHITECT_MODEL: Final[str] = _configured_model(
     "SOFTWARE_ARCHITECT_MODEL",
     "qwen3:4b",
-    "grok-4.7" if LLM_PROVIDER == "xai" else x-ai/grok-4.7,
+    "grok-4.7" if LLM_PROVIDER == "xai" else "x-ai/grok-4.7",
 )
 TECHNICAL_REVIEWER_MODEL: Final[str] = _configured_model(
     "TECHNICAL_REVIEWER_MODEL",
     "qwen3:4b",
-    "grok-4.7" if LLM_PROVIDER == "xai" else x-ai/grok-4.7,
+    "grok-4.7" if LLM_PROVIDER == "xai" else "x-ai/grok-4.7",
 )
