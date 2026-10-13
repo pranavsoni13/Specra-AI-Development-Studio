@@ -32,6 +32,51 @@ The frontend and backend are deployed separately. The health endpoint confirms b
 - **Workflow and retrieval:** LangGraph, ChromaDB, sentence-transformers
 - **Local persistence:** SQLite
 
+## LLM provider configuration
+
+Specra supports three provider modes through the shared structured-output client:
+
+- `LLM_PROVIDER=ollama` (default): preserves local Ollama and Ollama Cloud behavior.
+- `LLM_PROVIDER=xai`: uses the xAI chat-completions API through the OpenAI-compatible SDK.
+- `LLM_PROVIDER=openrouter`: uses OpenRouter's OpenAI-compatible API to access a selected model.
+
+Set provider credentials only in your local environment or deployment secret settings; never commit API keys.
+
+| Setting | Purpose |
+| --- | --- |
+| `LLM_PROVIDER` | `ollama`, `xai`, or `openrouter`; defaults to `ollama`. |
+| `XAI_API_KEY` | xAI API key when using `LLM_PROVIDER=xai`. |
+| `OPENROUTER_API_KEY` | OpenRouter API key when using `LLM_PROVIDER=openrouter`. |
+| `LLM_API_KEY` | Optional generic key fallback for either hosted provider. |
+| `LLM_BASE_URL` | Optional override for an OpenAI-compatible provider base URL. |
+| `XAI_REQUIREMENT_ANALYST_MODEL` | Optional model override for the Requirement Analyst with xAI. |
+| `XAI_PROJECT_PLANNER_MODEL` | Optional model override for the Planner with xAI. |
+| `XAI_SOFTWARE_ARCHITECT_MODEL` | Optional model override for the Architect with xAI. |
+| `XAI_TECHNICAL_REVIEWER_MODEL` | Optional model override for the Reviewer with xAI. |
+| `OPENROUTER_REQUIREMENT_ANALYST_MODEL` | Optional model ID override for the Requirement Analyst with OpenRouter. |
+| `OPENROUTER_PROJECT_PLANNER_MODEL` | Optional model ID override for the Planner with OpenRouter. |
+| `OPENROUTER_SOFTWARE_ARCHITECT_MODEL` | Optional model ID override for the Architect with OpenRouter. |
+| `OPENROUTER_TECHNICAL_REVIEWER_MODEL` | Optional model ID override for the Reviewer with OpenRouter. |
+
+Hosted defaults currently use `grok-4.7` for xAI and `openai/gpt-4o-mini` for OpenRouter. Provider-scoped model settings take precedence. Existing role-specific model settings remain active for Ollama to preserve the current local setup. Model availability and pricing can change; verify current provider documentation before choosing production defaults.
+
+Example for xAI (set these in your terminal/session or deployment environment, not in source code):
+
+```text
+LLM_PROVIDER=xai
+XAI_API_KEY=<your-key>
+```
+
+Example for OpenRouter:
+
+```text
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=<your-key>
+OPENROUTER_TECHNICAL_REVIEWER_MODEL=<provider>/<model>
+```
+
+When switching the hosted deployment from Ollama Cloud to xAI/OpenRouter, update the provider and secret settings in the hosting dashboard first. Do not overwrite the working deployment's configuration as part of local development. Exercise the workflow against a fixed evaluation set before selecting a provider for all agents.
+
 ## Repository layout
 
 ```text
@@ -140,7 +185,7 @@ The full workflow invokes local language models and may take a long time on CPU-
 The frontend and backend are separate deployment concerns.
 
 - The Vite proxy in `frontend/vite.config.js` applies to local development, not to a production deployment.
-- The backend uses the Ollama Python client. A cloud-hosted backend cannot reach Ollama running only on a developer's computer. Configure a reachable Ollama-compatible endpoint with `OLLAMA_HOST` and, when required by the provider, `OLLAMA_API_KEY`. Configure the agent model names to match models available from that endpoint.
+- A cloud-hosted backend cannot reach Ollama running only on a developer's computer. For Ollama Cloud, configure a reachable endpoint with `OLLAMA_HOST` and, when required, `OLLAMA_API_KEY`. For xAI or OpenRouter, use the `LLM_PROVIDER` and API-key settings described above.
 - The project currently uses SQLite for local project/context storage and ChromaDB for retrieval data. Ephemeral cloud filesystems can lose SQLite and generated vector-store files after restarts or redeployments. Use a persistent datastore/storage strategy before relying on long-term hosted data.
 - Do not commit `.env` files, API keys, local databases, model weights, vector database runtime files, virtual environments, or build output.
 
