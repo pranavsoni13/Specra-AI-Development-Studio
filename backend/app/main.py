@@ -8,6 +8,7 @@ from app.api.routes.code_generation import router as code_generation_router
 from app.api.routes.context import router as context_router
 from app.api.routes.planner import router as planner_router
 from app.api.routes.projects import router as projects_router
+from app.api.routes.quality import router as quality_router
 from app.api.routes.requirements import router as requirements_router
 
 
@@ -54,6 +55,10 @@ app.include_router(
 
 app.include_router(
     context_router
+)
+
+app.include_router(
+    quality_router
 )
 
 
