@@ -369,7 +369,7 @@ dist/
             "APP_ENV=development\n# Add required project variables as placeholders only.\n",
         ),
         _file(
-            "SPEC​RA_CODEGEN_GUIDE.md",
+            "SPECra_CODEGEN_GUIDE.md",
             "Honest setup and VS Code testing guide.",
             f'''# {project_name} — VS Code setup
 
