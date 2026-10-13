@@ -3,6 +3,7 @@ import ProjectMemoryPanel from "./components/ProjectMemoryPanel";
 import ProjectTeamPanel from "./ProjectTeamPanel";
 import ProjectTestingPanel from "./ProjectTestingPanel";
 import ProjectCopilotPanel from "./ProjectCopilotPanel";
+import CodeStudioPanel from "./CodeStudioPanel";
 
 const API_BASE = "/api/v1";
 
@@ -106,6 +107,7 @@ function App({ currentUser }) {
   const [showTeam, setShowTeam] = useState(false);
   const [showTesting, setShowTesting] = useState(false);
   const [showCopilot, setShowCopilot] = useState(false);
+  const [showCodeStudio, setShowCodeStudio] = useState(false);
   const [workspaceReady, setWorkspaceReady] = useState(false);
 
   const [versions, setVersions] =
@@ -2732,6 +2734,8 @@ function App({ currentUser }) {
                 className="ghost-button"
                 onClick={() => {
                   setShowTeam(false);
+                  setShowCopilot(false);
+                  setShowCodeStudio(false);
                   setShowTesting((value) => !value);
                 }}
               >
@@ -2742,10 +2746,22 @@ function App({ currentUser }) {
                 onClick={() => {
                   setShowTeam(false);
                   setShowTesting(false);
+                  setShowCodeStudio(false);
                   setShowCopilot((value) => !value);
                 }}
               >
                 {showCopilot ? "Close Copilot" : "AI Copilot"}
+              </button>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setShowTeam(false);
+                  setShowTesting(false);
+                  setShowCopilot(false);
+                  setShowCodeStudio((value) => !value);
+                }}
+              >
+                {showCodeStudio ? "Close Code Studio" : "Code Studio"}
               </button>
             </>
           )}
@@ -2791,6 +2807,13 @@ function App({ currentUser }) {
             setError("");
             setStatusMessage("Copilot suggestion loaded for review. No artifact has changed yet.");
           }}
+        />
+      )}
+
+      {showCodeStudio && project && (
+        <CodeStudioPanel
+          projectId={project.project_id}
+          onClose={() => setShowCodeStudio(false)}
         />
       )}
 
