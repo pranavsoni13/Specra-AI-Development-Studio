@@ -28,6 +28,7 @@ RESERVED_PATHS = {
     ".vscode/launch.json",
     ".vscode/tasks.json",
     "specra_codegen_guide.md",
+    "backend/tests/test_health.py",
 }
 SECRET_PATTERNS = [
     re.compile(r"\bsk-[A-Za-z0-9_-]{24,}\b"),
@@ -518,6 +519,21 @@ class CodeGenerationQualityController:
             validated[package_key] = scaffold_map[package_key]
             warnings.append(
                 "The generated frontend/package.json was invalid JSON and was replaced by a minimal Vite/React manifest."
+            )
+
+        # Keep the backend startup probe independent of model output, so a
+        # downloaded bundle has a deterministic /health endpoint to test.
+        main_key = "backend/app/main.py"
+        main_file = validated.get(main_key)
+        if main_file and "/health" not in main_file.content:
+            validated[main_key] = _file(
+                main_file.path,
+                main_file.purpose + " Includes the deterministic Specra health endpoint.",
+                main_file.content.rstrip()
+                + '\\n\\n@app.get("/health")\\ndef health_check():\\n    return {"status": "healthy"}\\n',
+            )
+            warnings.append(
+                "Added a deterministic /health endpoint for the included VS Code smoke test."
             )
 
         # The generated test smoke check is deterministic; report syntax problems,
