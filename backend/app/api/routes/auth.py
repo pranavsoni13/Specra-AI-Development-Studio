@@ -13,6 +13,7 @@ from app.core.security import (
     auth_store,
     get_current_user,
     require_roles,
+    verify_password,
 )
 
 
@@ -29,6 +30,11 @@ class BootstrapRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=256)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=12, max_length=256)
 
 
 class UserCreateRequest(BaseModel):
@@ -179,6 +185,30 @@ def get_me(user: dict = Depends(get_current_user)) -> dict:
     return {"user": auth_store.public_user(user)}
 
 
+@router.post("/change-password")
+def change_password(
+    request: ChangePasswordRequest,
+    response: Response,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    if not verify_password(request.current_password, current_user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+    try:
+        updated = auth_store.update_password(
+            current_user["user_id"],
+            request.new_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    public = _new_session(response, updated)
+    return {"user": public, "message": "Password updated and sessions rotated."}
+
+
 @router.get("/users")
 def list_users(
     user: dict = Depends(require_roles("admin")),
@@ -215,6 +245,15 @@ def update_user(
         raise HTTPException(
             status_code=400,
             detail="You cannot deactivate the currently signed-in administrator.",
+        )
+    if (
+        user_id == current_user["user_id"]
+        and request.role is not None
+        and request.role != "admin"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot remove your own administrator role.",
         )
     if request.role is None and request.is_active is None:
         raise HTTPException(
