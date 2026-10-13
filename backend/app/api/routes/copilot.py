@@ -6,7 +6,7 @@ from app.agents.project_copilot.agent import ProjectCopilotAgent
 from app.agents.project_copilot.schemas import CopilotQuestionRequest
 from app.core.context_store import project_context_store
 from app.core.copilot_store import copilot_store
-from app.core.security import get_current_user, require_project_roles
+from app.core.security import auth_store, get_current_user, require_project_roles
 from app.core.storage.project_store import project_store
 
 
@@ -33,11 +33,17 @@ def list_conversations(
     _: dict = Depends(require_project_roles()),
 ) -> dict:
     _project_or_404(project_id)
+    project_role = auth_store.get_project_role(project_id, user)
     return {
         "conversations": copilot_store.list_conversations(
             project_id=project_id,
             user_id=user["user_id"],
-        )
+        ),
+        "my_role": project_role,
+        "can_ask": project_role in {
+            "admin", "owner", "analyst", "planner", "architect",
+            "tester", "reviewer", "developer",
+        },
     }
 
 
