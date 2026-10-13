@@ -4,16 +4,18 @@ from datetime import datetime
 from functools import lru_cache
 import os
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.core.context_store import project_context_store
 from app.core.storage.project_store import project_store
+from app.core.security import get_current_user, require_project_roles
 
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/context",
     tags=["Project Context"],
+    dependencies=[Depends(get_current_user)],
 )
 
 
@@ -221,6 +223,7 @@ def _response(
 @router.get(
     "",
     response_model=list[ProjectContextResponse],
+    dependencies=[Depends(require_project_roles())],
 )
 def list_project_context(
     project_id: str,
@@ -239,6 +242,7 @@ def list_project_context(
     "",
     response_model=ProjectContextResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_project_roles("analyst", "planner", "architect", "developer"))],
 )
 def create_project_context(
     project_id: str,
@@ -284,6 +288,7 @@ def create_project_context(
 @router.put(
     "/{context_id}",
     response_model=ProjectContextResponse,
+    dependencies=[Depends(require_project_roles("analyst", "planner", "architect", "developer"))],
 )
 def update_project_context(
     project_id: str,
@@ -337,6 +342,7 @@ def update_project_context(
 @router.delete(
     "/{context_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_project_roles("analyst", "planner", "architect", "developer"))],
 )
 def delete_project_context(
     project_id: str,
@@ -369,6 +375,7 @@ def delete_project_context(
 @router.post(
     "/search",
     response_model=ProjectContextSearchResponse,
+    dependencies=[Depends(require_project_roles())],
 )
 def search_project_context(
     project_id: str,
@@ -399,6 +406,7 @@ def search_project_context(
 @router.post(
     "/rag-search",
     response_model=ProjectContextRAGSearchResponse,
+    dependencies=[Depends(require_project_roles())],
 )
 def rag_search_project_context(
     project_id: str,
