@@ -530,7 +530,7 @@ class AuthStore:
                 WHERE pm.project_id = ?
                   AND (p.owner_id IS NULL OR pm.user_id <> p.owner_id)
 
-                ORDER BY created_at ASC
+                ORDER BY 5 ASC
                 """,
                 (project_id, project_id),
             ).fetchall()
