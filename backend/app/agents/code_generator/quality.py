@@ -7,6 +7,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from html import escape
 from pathlib import PurePosixPath
 
 from .schemas import CodeBundle, CodeBundleDraft, CodeFile
@@ -49,6 +50,7 @@ def _file(path: str, purpose: str, content: str) -> CodeFile:
 def deterministic_scaffold(project_name: str) -> list[CodeFile]:
     """Files in this function are trusted scaffolding, never LLM-supplied IDE commands."""
     title = json.dumps(project_name.strip() or "Specra Generated Project")
+    html_title = escape(project_name.strip() or "Specra Generated Project", quote=True)
     slug = _slug(project_name)
     files = [
         _file(
@@ -139,8 +141,8 @@ def test_health_endpoint_returns_healthy_status():
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="{project_name} starter application" />
-    <title>{project_name}</title>
+    <meta name="description" content="{html_title} starter application" />
+    <title>{html_title}</title>
   </head>
   <body>
     <div id="root"></div>
@@ -186,6 +188,8 @@ createRoot(document.getElementById("root")).render(
             "Minimal status dashboard used if the model omits one.",
             f'''import {{ useEffect, useState }} from "react";
 
+const projectTitle = {title};
+
 export default function App() {{
   const [health, setHealth] = useState("checking");
 
@@ -203,7 +207,7 @@ export default function App() {{
     <main className="page-shell">
       <section className="hero-panel">
         <span className="eyebrow">GENERATED STARTER PROJECT</span>
-        <h1>{project_name}</h1>
+        <h1>{{projectTitle}}</h1>
         <p>
           The starter frontend is connected to the local FastAPI health endpoint.
           Continue implementing the approved requirements in the generated modules.
@@ -344,6 +348,11 @@ h1 { margin: 14px 0; font-size: clamp(28px, 5vw, 46px); letter-spacing: -.05em; 
 ''',
         ),
         _file(
+            ".editorconfig",
+            "Consistent source-file formatting defaults.",
+            "root = true\n\n[*]\ncharset = utf-8\nend_of_line = lf\ninsert_final_newline = true\nindent_style = space\nindent_size = 2\n\n[*.py]\nindent_size = 4\n",
+        ),
+        _file(
             ".gitignore",
             "Ignores local secrets, caches, and build artefacts.",
             '''.env
@@ -463,6 +472,11 @@ class CodeGenerationQualityController:
 
             canonical_path = path.as_posix()
             casefold_path = canonical_path.casefold()
+            if casefold_path in RESERVED_PATHS:
+                warnings.append(
+                    f"Model output for {canonical_path} was replaced by trusted Specra scaffolding."
+                )
+                continue
             if casefold_path in validated:
                 raise ValueError(f"Duplicate generated file path: {canonical_path}")
             body = item.content
