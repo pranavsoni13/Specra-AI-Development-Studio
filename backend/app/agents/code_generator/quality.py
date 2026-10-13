@@ -530,7 +530,7 @@ class CodeGenerationQualityController:
                 main_file.path,
                 main_file.purpose + " Includes the deterministic Specra health endpoint.",
                 main_file.content.rstrip()
-                + '\\n\\n@app.get("/health")\\ndef health_check():\\n    return {"status": "healthy"}\\n',
+                + '\n\n@app.get("/health")\ndef health_check():\n    return {"status": "healthy"}\n',
             )
             warnings.append(
                 "Added a deterministic /health endpoint for the included VS Code smoke test."
