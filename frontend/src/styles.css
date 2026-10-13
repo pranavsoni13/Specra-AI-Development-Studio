@@ -4202,3 +4202,30 @@ button:disabled {
 .memory-notice{border:1px solid #1d5144;background:#0d211e;color:#7ce2c2}
 .memory-error{border:1px solid #633743;background:#21131b;color:#ff9eae}
 @media(max-width:760px){.project-memory-panel{padding:14px}.memory-grid{grid-template-columns:minmax(0,1fr)}.project-memory-heading{align-items:flex-start}.project-memory-heading h2{font-size:19px}}
+
+
+/* Downloadable engineering documents */
+.document-export-panel {
+  margin: 18px 0 22px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid rgba(123, 168, 248, 0.16);
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(26, 39, 60, 0.38), rgba(12, 17, 25, 0.72));
+}
+.document-export-copy { min-width: 0; }
+.document-export-copy strong { display: block; margin: 6px 0 4px; color: #e6edf8; font-size: 13px; }
+.document-export-copy p { margin: 0; max-width: 460px; color: #8797af; font-size: 11px; line-height: 1.6; }
+.document-export-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; flex: 0 0 auto; }
+.document-export-actions button { white-space: nowrap; }
+@media (max-width: 900px) {
+  .document-export-panel { align-items: flex-start; flex-direction: column; }
+  .document-export-actions { width: 100%; justify-content: flex-start; }
+}
+@media (max-width: 560px) {
+  .document-export-actions { display: grid; grid-template-columns: 1fr; }
+  .document-export-actions button { width: 100%; }
+}
