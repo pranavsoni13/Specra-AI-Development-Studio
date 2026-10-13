@@ -12,7 +12,7 @@ Specra is an AI-assisted software engineering studio that coordinates specialize
 - **Backend health:** <https://specra-api-pranavsoni13.onrender.com/health>
 - **Interactive API docs:** <https://specra-api-pranavsoni13.onrender.com/docs>
 
-The frontend and backend are deployed separately. The health endpoint confirms backend availability; successful AI generation additionally depends on the configured Ollama API key, available model access, and remaining provider usage.
+The frontend and backend are deployed separately. The health endpoint confirms backend availability; successful AI generation additionally depends on the selected inference provider's credentials, model availability, and remaining provider quota.
 
 ## What it does
 
