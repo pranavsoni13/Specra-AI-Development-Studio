@@ -4,6 +4,7 @@ import ProjectTeamPanel from "./ProjectTeamPanel";
 import ProjectTestingPanel from "./ProjectTestingPanel";
 import ProjectCopilotPanel from "./ProjectCopilotPanel";
 import CodeStudioPanel from "./CodeStudioPanel";
+import QualityLabPanel from "./components/QualityLabPanel";
 
 const API_BASE = "/api/v1";
 
@@ -3663,6 +3664,8 @@ function App({ currentUser }) {
 
                 {renderArtifact()}
 
+
+                <QualityLabPanel projectId={project.project_id} />
                 {showVersions &&
                   renderVersionHistory()}
 
