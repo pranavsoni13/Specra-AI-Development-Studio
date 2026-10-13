@@ -1,0 +1,59 @@
+name: Testing workspace and document export checks
+
+on:
+  push:
+    branches:
+      - "feature/**"
+  pull_request:
+    branches:
+      - main
+      - "security/**"
+
+jobs:
+  backend-testing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend runtime dependencies
+        run: python -m pip install fastapi "pydantic[email]" pydantic-settings python-dotenv ollama openai langgraph
+      - name: Compile backend and deterministic tests
+        working-directory: backend
+        run: python -m compileall -q app test_auth_security.py test_auth_routes.py test_testing_workspace.py test_testing_routes.py
+      - name: Test authentication and project authorization
+        working-directory: backend
+        run: python test_auth_security.py
+      - name: Test authenticated project routes
+        working-directory: backend
+        run: python test_auth_routes.py
+      - name: Test test-suite generation, storage and documents
+        working-directory: backend
+        run: python test_testing_workspace.py
+      - name: Test testing workspace and document download routes
+        working-directory: backend
+        run: python test_testing_routes.py
+      - name: Import FastAPI application
+        working-directory: backend
+        run: python -c "from app.main import app; print(len(app.routes))"
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
