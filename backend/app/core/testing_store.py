@@ -113,6 +113,7 @@ class TestStore:
                 ),
             )
             suite_id = int(cursor.lastrowid)
+            connection.commit()
             return self.get_suite(project_id, suite_id=suite_id)
 
     def get_suite(
