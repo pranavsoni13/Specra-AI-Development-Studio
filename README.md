@@ -119,13 +119,24 @@ Vite serves the frontend at `http://localhost:5173` and proxies `/api` requests 
 
 ## Tests
 
-Run deterministic contract tests from `backend/`:
+Install test tooling in your active backend virtual environment:
 
 ```bash
-python test_semantic_integrity.py
-python test_refinement_flow.py
-python test_llm_providers.py
+pip install pytest
 ```
+
+Run the deterministic regression suite from the repository root:
+
+```bash
+# Windows Command Prompt
+set PYTHONPATH=backend
+python -m pytest -q backend/test_llm_providers.py backend/test_workflow_graph.py backend/test_semantic_integrity.py backend/test_refinement_flow.py
+
+# macOS/Linux
+PYTHONPATH=backend python -m pytest -q backend/test_llm_providers.py backend/test_workflow_graph.py backend/test_semantic_integrity.py backend/test_refinement_flow.py
+```
+
+These tests mock model calls; they do not require a working Ollama server or a paid API key. The provider adapter has not yet been live-tested against xAI or OpenRouter credentials, so run one small smoke test after configuring your chosen provider.
 
 Run the full multi-agent workflow with:
 
