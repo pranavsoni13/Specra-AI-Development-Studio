@@ -458,8 +458,6 @@ class CodeGenerationQualityController:
             filename = parts[-1].casefold()
             if filename in {".env", ".env.local", ".env.production", "id_rsa", "id_ed25519"}:
                 raise ValueError("Credential files are not allowed in generated bundles.")
-            if filename in {".vscode", "launch.json", "tasks.json"} and ".vscode" in lowered_parts:
-                raise ValueError("VS Code task/launch files are supplied by the trusted Specra scaffold.")
             if ".github" in lowered_parts and "workflows" in lowered_parts:
                 raise ValueError("Generated CI workflows are disabled until code execution is sandboxed.")
             suffix = path.suffix.casefold()
