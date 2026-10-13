@@ -2722,20 +2722,17 @@ function App({ currentUser }) {
             </button>
           )}
 
-          {project && (
-            <button
-              className="ghost-button"
-              onClick={
-                clearProject
-              }
-              disabled={
-                loading ||
-                refining
-              }
-            >
-              New Project
-            </button>
-          )}
+          {project &&
+            currentUser &&
+            ["admin", "analyst"].includes(currentUser.role) && (
+              <button
+                className="ghost-button"
+                onClick={clearProject}
+                disabled={loading || refining}
+              >
+                New Project
+              </button>
+            )}
         </div>
       </header>
 
@@ -2851,7 +2848,9 @@ function App({ currentUser }) {
             review.
           </p>
 
-          {!project && (
+          {!project &&
+            currentUser &&
+            ["admin", "analyst"].includes(currentUser.role) && (
             <div className="idea-card">
               <div className="input-header">
                 <div>
@@ -2923,6 +2922,20 @@ function App({ currentUser }) {
               </div>
             </div>
           )}
+
+          {!project &&
+            currentUser &&
+            !["admin", "analyst"].includes(currentUser.role) && (
+              <div className="idea-card role-workspace-notice">
+                <div className="input-label">No project assigned yet</div>
+                <p className="hero-copy">
+                  Your account's default role is {currentUser.role}. Ask the workspace
+                  administrator to add you to an existing project with your job-area
+                  permissions, or assign you the analyst role if you need to create
+                  new projects.
+                </p>
+              </div>
+            )}
 
           {project && (
             <div className="workflow-card">
