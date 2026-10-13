@@ -292,11 +292,36 @@ class AuthStore:
     def authenticate(self, email: str, password: str) -> dict | None:
         user = self.get_user_by_email(email)
         if not user or not bool(user["is_active"]):
-            verify_password(password, "invalid$0$0$0$0$0")
+            # Perform a scrypt operation even for unknown/inactive accounts so
+            # account existence is less obvious from response timing.
+            hashlib.scrypt(
+                password.encode("utf-8"),
+                salt=b"specra-invalid-account-salt",
+                n=PASSWORD_SCRYPT_N,
+                r=PASSWORD_SCRYPT_R,
+                p=PASSWORD_SCRYPT_P,
+                dklen=64,
+            )
             return None
         if not verify_password(password, user["password_hash"]):
             return None
         return user
+
+    def update_password(self, user_id: str, password: str) -> dict | None:
+        encoded = hash_password(password)
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE users SET password_hash = ? WHERE user_id = ?",
+                (encoded, user_id),
+            )
+            if cursor.rowcount == 0:
+                return None
+            # Rotate all sessions whenever credentials change.
+            connection.execute(
+                "DELETE FROM user_sessions WHERE user_id = ?",
+                (user_id,),
+            )
+        return self.get_user_by_id(user_id)
 
     def create_session(self, user_id: str) -> tuple[str, datetime]:
         token = secrets.token_urlsafe(32)
