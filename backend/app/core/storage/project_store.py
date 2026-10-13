@@ -290,6 +290,7 @@ class ProjectStore:
                         "idle",
                         "idle",
                         None,
+                        None,
                         owner_id,
                         now,
                         now,
