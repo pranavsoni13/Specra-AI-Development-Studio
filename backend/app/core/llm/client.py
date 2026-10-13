@@ -5,13 +5,26 @@ from typing import Type, TypeVar
 from urllib.parse import urlparse
 
 import ollama
+from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
 
 T = TypeVar("T", bound=BaseModel)
+SUPPORTED_PROVIDERS = {"ollama", "openrouter", "xai"}
 
 
 class LocalLLMClient:
+    """
+    Shared structured-output client used by Specra's existing agents.
+
+    LLM_PROVIDER selects the runtime:
+      - ollama: local Ollama or an Ollama-compatible hosted endpoint
+      - openrouter: OpenRouter's OpenAI-compatible API
+      - xai: xAI's OpenAI-compatible API
+
+    Ollama remains the default, preserving existing local installations.
+    """
+
     def __init__(
         self,
         model_name: str = "qwen3:4b",
@@ -23,28 +36,81 @@ class LocalLLMClient:
         self.num_predict = num_predict
         self.keep_alive = keep_alive
         self.debug = debug
+        self.provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
 
-        # When OLLAMA_HOST is set, connect to that host explicitly.
-        host = os.getenv("OLLAMA_HOST", "").strip()
-        api_key = os.getenv("OLLAMA_API_KEY", "").strip()
-        host_name = (urlparse(host).hostname or "").casefold() if host else ""
-        self._is_ollama_cloud = host_name in {
-            "ollama.com",
-            "www.ollama.com",
-        }
+        if self.provider not in SUPPORTED_PROVIDERS:
+            providers = ", ".join(sorted(SUPPORTED_PROVIDERS))
+            raise ValueError(
+                f"Unsupported LLM_PROVIDER '{self.provider}'. "
+                f"Choose one of: {providers}."
+            )
 
-        if host:
-            headers = (
-                {"Authorization": f"Bearer {api_key}"}
-                if api_key
-                else {}
+        self._ollama_client = None
+        self._api_client = None
+        self._is_ollama_cloud = False
+
+        if self.provider == "ollama":
+            host = os.getenv("OLLAMA_HOST", "").strip()
+            api_key = os.getenv("OLLAMA_API_KEY", "").strip()
+            host_name = (
+                (urlparse(host).hostname or "").casefold()
+                if host
+                else ""
             )
-            self._ollama_client = ollama.Client(
-                host=host,
-                headers=headers,
-            )
+            self._is_ollama_cloud = host_name in {
+                "ollama.com",
+                "www.ollama.com",
+            }
+
+            if host:
+                headers = (
+                    {"Authorization": f"Bearer {api_key}"}
+                    if api_key
+                    else {}
+                )
+                self._ollama_client = ollama.Client(
+                    host=host,
+                    headers=headers,
+                )
+            else:
+                self._ollama_client = ollama.Client()
+            return
+
+        if self.provider == "openrouter":
+            api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+            base_url = "https://openrouter.ai/api/v1"
+            headers = {}
+            site_url = os.getenv("OPENROUTER_SITE_URL", "").strip()
+            app_name = os.getenv("OPENROUTER_APP_NAME", "Specra").strip()
+            if site_url:
+                headers["HTTP-Referer"] = site_url
+            if app_name:
+                headers["X-OpenRouter-Title"] = app_name
         else:
-            self._ollama_client = ollama.Client()
+            api_key = os.getenv("XAI_API_KEY", "").strip()
+            base_url = os.getenv(
+                "XAI_BASE_URL",
+                "https://api.x.ai/v1",
+            ).strip()
+            headers = {}
+
+        if not api_key:
+            variable = (
+                "OPENROUTER_API_KEY"
+                if self.provider == "openrouter"
+                else "XAI_API_KEY"
+            )
+            raise ValueError(
+                f"LLM_PROVIDER='{self.provider}' requires {variable} "
+                "to be configured in the backend environment."
+            )
+
+        self._api_client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            default_headers=headers or None,
+            timeout=180.0,
+        )
 
     def generate_structured(
         self,
@@ -62,11 +128,61 @@ class LocalLLMClient:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        request_options = {}
 
-        if self._is_ollama_cloud:
-            # Ollama Cloud currently does not support the format/schema
-            # argument. Put the schema in the prompt and validate locally.
+        if self.provider == "ollama":
+            request_options = {}
+            if self._is_ollama_cloud:
+                # Ollama Cloud currently does not support the format/schema
+                # argument. Put the schema in the prompt and validate locally.
+                schema_text = json.dumps(
+                    schema,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                messages[0]["content"] += (
+                    "\n\nSTRICT OUTPUT CONTRACT:\n"
+                    "Return exactly one JSON object matching the JSON Schema "
+                    "provided in the user's message. Do not return Markdown, "
+                    "code fences, reasoning, or commentary. Include every "
+                    "required field using the correct JSON types. Do not add "
+                    "fields that are not allowed by the schema."
+                )
+                messages[1]["content"] += (
+                    "\n\nOUTPUT JSON SCHEMA (follow this schema exactly):\n"
+                    f"{schema_text}\n"
+                    "Return only the JSON object, with no surrounding text."
+                )
+            else:
+                # Preserve native constrained structured output for local Ollama.
+                request_options["format"] = schema
+
+            response = self._ollama_client.chat(
+                model=self.model_name,
+                messages=messages,
+                think=False,
+                stream=False,
+                keep_alive=self.keep_alive,
+                options={
+                    "temperature": 0,
+                    "num_predict": self.num_predict,
+                },
+                **request_options,
+            )
+            content = response.message.content
+            if not content:
+                raise RuntimeError("LLM returned an empty response.")
+
+            if self.debug:
+                self._print_ollama_metrics(
+                    response=response,
+                    system_prompt=messages[0]["content"],
+                    user_prompt=messages[1]["content"],
+                    output=content,
+                )
+        else:
+            # JSON mode is broadly supported by compatible remote providers.
+            # Put the complete Pydantic schema in the prompt and always validate
+            # the returned object locally before any agent sees it.
             schema_text = json.dumps(
                 schema,
                 ensure_ascii=False,
@@ -75,44 +191,34 @@ class LocalLLMClient:
             messages[0]["content"] += (
                 "\n\nSTRICT OUTPUT CONTRACT:\n"
                 "Return exactly one JSON object matching the JSON Schema "
-                "provided in the user's message. Do not return Markdown, "
-                "code fences, reasoning, or commentary. Include every "
-                "required field using the correct JSON types. Do not add "
-                "fields that are not allowed by the schema."
+                "provided in the user's message. Include all required fields "
+                "with correct JSON types. Do not return Markdown, code fences, "
+                "reasoning, or commentary."
             )
             messages[1]["content"] += (
                 "\n\nOUTPUT JSON SCHEMA (follow this schema exactly):\n"
                 f"{schema_text}\n"
                 "Return only the JSON object, with no surrounding text."
             )
-        else:
-            # Local Ollama supports native constrained structured output.
-            request_options["format"] = schema
-
-        response = self._ollama_client.chat(
-            model=self.model_name,
-            messages=messages,
-            think=False,
-            stream=False,
-            keep_alive=self.keep_alive,
-            options={
-                "temperature": 0,
-                "num_predict": self.num_predict,
-            },
-            **request_options,
-        )
-
-        content = response.message.content
-        if not content:
-            raise RuntimeError("LLM returned an empty response.")
-
-        if self.debug:
-            self._print_metrics(
-                response=response,
-                system_prompt=messages[0]["content"],
-                user_prompt=messages[1]["content"],
-                output=content,
+            response = self._api_client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0,
+                max_tokens=self.num_predict,
+                response_format={"type": "json_object"},
             )
+            content = response.choices[0].message.content
+            if not content:
+                raise RuntimeError(
+                    f"{self.provider} returned an empty response."
+                )
+            if self.debug:
+                self._print_remote_metrics(
+                    response=response,
+                    system_prompt=messages[0]["content"],
+                    user_prompt=messages[1]["content"],
+                    output=content,
+                )
 
         return self._validate_output(content, output_schema)
 
@@ -128,7 +234,7 @@ class LocalLLMClient:
         decoder = json.JSONDecoder()
         validation_errors = []
 
-        for match in re.finditer(r"[{\[]", content):
+        for match in re.finditer(r"\{", content):
             try:
                 candidate, _ = decoder.raw_decode(content[match.start():])
             except json.JSONDecodeError:
@@ -150,13 +256,15 @@ class LocalLLMClient:
                 for item in latest.errors()[:8]
             )
         else:
-            details = "response was not valid JSON matching the expected object"
+            details = (
+                "response was not valid JSON matching the expected object"
+            )
 
         raise RuntimeError(
             f"LLM output failed the {output_schema.__name__} schema: {details}"
         ) from direct_error
 
-    def _print_metrics(
+    def _print_ollama_metrics(
         self,
         response,
         system_prompt: str,
@@ -183,6 +291,7 @@ class LocalLLMClient:
             generation_tps = eval_count / generation_seconds
 
         print("\n[LLM Diagnostics]")
+        print(f"Provider: {self.provider}")
         print(f"Model: {self.model_name}")
         print(f"Prompt characters: {prompt_chars}")
         print(f"Output characters: {output_chars}")
@@ -199,4 +308,29 @@ class LocalLLMClient:
             print(f"Total Ollama time: {total_seconds:.2f}s")
         if generation_tps is not None:
             print(f"Generation speed: {generation_tps:.2f} tokens/sec")
+        print()
+
+    def _print_remote_metrics(
+        self,
+        response,
+        system_prompt: str,
+        user_prompt: str,
+        output: str,
+    ) -> None:
+        usage = getattr(response, "usage", None)
+        print("\n[LLM Diagnostics]")
+        print(f"Provider: {self.provider}")
+        print(f"Model requested: {self.model_name}")
+        print(
+            "Prompt characters: "
+            f"{len(system_prompt) + len(user_prompt)}"
+        )
+        print(f"Output characters: {len(output)}")
+        if usage is not None:
+            if getattr(usage, "prompt_tokens", None) is not None:
+                print(f"Prompt tokens: {usage.prompt_tokens}")
+            if getattr(usage, "completion_tokens", None) is not None:
+                print(f"Output tokens: {usage.completion_tokens}")
+            if getattr(usage, "total_tokens", None) is not None:
+                print(f"Total tokens: {usage.total_tokens}")
         print()
