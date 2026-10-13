@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from langgraph.graph import END, START, StateGraph
+
 from app.agents.requirement_analyst.agent import RequirementAnalyst
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
 
@@ -96,6 +98,93 @@ class ProjectWorkflow:
             **reviewer_kwargs
         )
 
+        self.graph = self._build_graph()
+
+    def _build_graph(self):
+        """Compile the existing agent sequence as an explicit LangGraph graph."""
+        graph = StateGraph(ProjectState)
+        graph.add_node("requirements", self._requirements_node)
+        graph.add_node("project_plan", self._project_plan_node)
+        graph.add_node("architecture", self._architecture_node)
+        graph.add_node("technical_review", self._technical_review_node)
+
+        graph.add_edge(START, "requirements")
+        graph.add_edge("requirements", "project_plan")
+        graph.add_edge("project_plan", "architecture")
+        graph.add_edge("architecture", "technical_review")
+        graph.add_edge("technical_review", END)
+        return graph.compile()
+
+    def _requirements_node(self, state: ProjectState) -> dict:
+        callback = state.get("on_stage")
+        self._emit_stage(callback, "requirements", "running")
+        try:
+            context = state.get("project_context")
+            if context and context.strip():
+                artifact = self.requirement_agent.analyze(
+                    state["idea"],
+                    project_context=context,
+                )
+            else:
+                artifact = self.requirement_agent.analyze(state["idea"])
+        except Exception:
+            self._emit_stage(callback, "requirements", "failed")
+            raise
+
+        self._emit_stage(callback, "requirements", "completed")
+        self._emit_artifact(state.get("on_artifact"), "requirements", artifact)
+        return {"requirements": artifact}
+
+    def _project_plan_node(self, state: ProjectState) -> dict:
+        callback = state.get("on_stage")
+        self._emit_stage(callback, "project_plan", "running")
+        try:
+            artifact = self.planner_agent.plan(state["requirements"])
+        except Exception:
+            self._emit_stage(callback, "project_plan", "failed")
+            raise
+
+        self._emit_stage(callback, "project_plan", "completed")
+        self._emit_artifact(state.get("on_artifact"), "project_plan", artifact)
+        return {"project_plan": artifact}
+
+    def _architecture_node(self, state: ProjectState) -> dict:
+        callback = state.get("on_stage")
+        self._emit_stage(callback, "architecture", "running")
+        try:
+            artifact = self.architect_agent.design(
+                state["requirements"],
+                state["project_plan"],
+            )
+        except Exception:
+            self._emit_stage(callback, "architecture", "failed")
+            raise
+
+        self._emit_stage(callback, "architecture", "completed")
+        self._emit_artifact(state.get("on_artifact"), "architecture", artifact)
+        return {"architecture": artifact}
+
+    def _technical_review_node(self, state: ProjectState) -> dict:
+        callback = state.get("on_stage")
+        self._emit_stage(callback, "technical_review", "running")
+        try:
+            artifact = self.reviewer_agent.review(
+                state["requirements"],
+                state["project_plan"],
+                state["architecture"],
+            )
+        except Exception:
+            self._emit_stage(callback, "technical_review", "failed")
+            raise
+
+        self._emit_stage(callback, "technical_review", "completed")
+        self._emit_artifact(
+            state.get("on_artifact"),
+            "technical_review",
+            artifact,
+        )
+        return {"review": artifact}
+
     @staticmethod
     def _emit_stage(
         callback: StageCallback | None,
@@ -129,154 +218,18 @@ class ProjectWorkflow:
 
         cleaned_idea = idea.strip()
 
-        # -------------------------------------------------
-        # REQUIREMENTS
-        # -------------------------------------------------
-
-        self._emit_stage(
-            on_stage,
-            "requirements",
-            "running",
-        )
-
-        try:
-            if project_context and project_context.strip():
-                requirements = self.requirement_agent.analyze(
-                    cleaned_idea,
-                    project_context=project_context,
-                )
-            else:
-                requirements = self.requirement_agent.analyze(
-                    cleaned_idea
-                )
-        except Exception:
-            self._emit_stage(
-                on_stage,
-                "requirements",
-                "failed",
-            )
-            raise
-
-        self._emit_stage(
-            on_stage,
-            "requirements",
-            "completed",
-        )
-
-        self._emit_artifact(
-            on_artifact,
-            "requirements",
-            requirements,
-        )
-
-        # -------------------------------------------------
-        # PROJECT PLAN
-        # -------------------------------------------------
-
-        self._emit_stage(
-            on_stage,
-            "project_plan",
-            "running",
-        )
-
-        try:
-            project_plan = self.planner_agent.plan(
-                requirements
-            )
-        except Exception:
-            self._emit_stage(
-                on_stage,
-                "project_plan",
-                "failed",
-            )
-            raise
-
-        self._emit_stage(
-            on_stage,
-            "project_plan",
-            "completed",
-        )
-
-        self._emit_artifact(
-            on_artifact,
-            "project_plan",
-            project_plan,
-        )
-
-        # -------------------------------------------------
-        # ARCHITECTURE
-        # -------------------------------------------------
-
-        self._emit_stage(
-            on_stage,
-            "architecture",
-            "running",
-        )
-
-        try:
-            architecture = self.architect_agent.design(
-                requirements,
-                project_plan,
-            )
-        except Exception:
-            self._emit_stage(
-                on_stage,
-                "architecture",
-                "failed",
-            )
-            raise
-
-        self._emit_stage(
-            on_stage,
-            "architecture",
-            "completed",
-        )
-
-        self._emit_artifact(
-            on_artifact,
-            "architecture",
-            architecture,
-        )
-
-        # -------------------------------------------------
-        # TECHNICAL REVIEW
-        # -------------------------------------------------
-
-        self._emit_stage(
-            on_stage,
-            "technical_review",
-            "running",
-        )
-
-        try:
-            review = self.reviewer_agent.review(
-                requirements,
-                project_plan,
-                architecture,
-            )
-        except Exception:
-            self._emit_stage(
-                on_stage,
-                "technical_review",
-                "failed",
-            )
-            raise
-
-        self._emit_stage(
-            on_stage,
-            "technical_review",
-            "completed",
-        )
-
-        self._emit_artifact(
-            on_artifact,
-            "technical_review",
-            review,
+        state = self.graph.invoke(
+            {
+                "idea": cleaned_idea,
+                "project_context": project_context,
+                "on_stage": on_stage,
+                "on_artifact": on_artifact,
+            }
         )
 
         return ProjectWorkflowResult(
-            requirements=requirements,
-            project_plan=project_plan,
-            architecture=architecture,
-            review=review,
+            requirements=state["requirements"],
+            project_plan=state["project_plan"],
+            architecture=state["architecture"],
+            review=state["review"],
         )
