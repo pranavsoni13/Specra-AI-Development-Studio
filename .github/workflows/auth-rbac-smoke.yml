@@ -22,10 +22,13 @@ jobs:
         run: python -m pip install fastapi "pydantic[email]" pydantic-settings python-dotenv ollama openai langgraph
       - name: Compile backend Python files
         working-directory: backend
-        run: python -m compileall -q app test_auth_security.py
+        run: python -m compileall -q app test_auth_security.py test_auth_routes.py
       - name: Test password, session and project-role security
         working-directory: backend
         run: python test_auth_security.py
+      - name: Test secured HTTP routes
+        working-directory: backend
+        run: python test_auth_routes.py
       - name: Import FastAPI application
         working-directory: backend
         run: python -c "from app.main import app; print(len(app.routes))"
