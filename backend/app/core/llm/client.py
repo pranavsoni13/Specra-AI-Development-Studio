@@ -234,7 +234,7 @@ class LocalLLMClient:
         decoder = json.JSONDecoder()
         validation_errors = []
 
-        for match in re.finditer(r"[{\\[]", content):
+        for match in re.finditer(r"\{", content):
             try:
                 candidate, _ = decoder.raw_decode(content[match.start():])
             except json.JSONDecodeError:
