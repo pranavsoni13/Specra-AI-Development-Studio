@@ -538,7 +538,7 @@ def require_project_roles(*roles: str) -> Callable:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Project not found or you do not have access to it.",
             )
-        if role != "admin" and role != "owner" and role not in roles:
+        if roles and role != "admin" and role != "owner" and role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Your project role does not permit this action.",
