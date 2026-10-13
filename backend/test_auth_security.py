@@ -131,6 +131,20 @@ class AuthStoreTests(unittest.TestCase):
             "reviewer",
         )
 
+        members = self.auth.list_project_members("owned-by-owner")
+        self.assertEqual(
+            {member["role"] for member in members},
+            {"owner", "reviewer"},
+        )
+
+        self.projects.delete_project("owned-by-owner")
+        with self.auth._connect() as connection:
+            remaining_memberships = connection.execute(
+                "SELECT COUNT(*) FROM project_members WHERE project_id = ?",
+                ("owned-by-owner",),
+            ).fetchone()[0]
+        self.assertEqual(remaining_memberships, 0)
+
     def test_disabling_user_revokes_existing_sessions(self):
         user = self.auth.create_user(
             email="disabled@example.com",
