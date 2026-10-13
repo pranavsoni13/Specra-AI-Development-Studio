@@ -190,7 +190,7 @@ class LocalLLMClient:
                 "role": "system",
                 "content": (
                     system_prompt
-                    + "\\n\\nReturn only a JSON object matching the "
+                    + "\n\nReturn only a JSON object matching the "
                     "schema provided with this request."
                 ),
             },
@@ -198,9 +198,9 @@ class LocalLLMClient:
                 "role": "user",
                 "content": (
                     user_prompt
-                    + "\\n\\nOUTPUT JSON SCHEMA (follow exactly):\\n"
+                    + "\n\nOUTPUT JSON SCHEMA (follow exactly):\n"
                     + schema_text
-                    + "\\nReturn only the JSON object. Do not wrap it in Markdown."
+                    + "\nReturn only the JSON object. Do not wrap it in Markdown."
                 ),
             },
         ]
@@ -248,7 +248,7 @@ class LocalLLMClient:
 
         if self.debug:
             usage = getattr(response, "usage", None)
-            print("\\n[LLM Diagnostics]")
+            print("\n[LLM Diagnostics]")
             print(f"Provider: {self.provider}")
             print(f"Model: {self.model_name}")
             print(
