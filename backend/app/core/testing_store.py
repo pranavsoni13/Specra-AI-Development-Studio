@@ -173,6 +173,10 @@ class TestStore:
             for case in payload["cases"]:
                 result = results.get(case["test_id"])
                 case.setdefault("status", "not_run")
+                case.setdefault("execution_notes", None)
+                case.setdefault("environment", None)
+                case.setdefault("executed_at", None)
+                case.setdefault("executed_by", None)
                 if result:
                     case.update(
                         status=result["status"],
