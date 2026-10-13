@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ProjectMemoryPanel from "./components/ProjectMemoryPanel";
 import ProjectTeamPanel from "./ProjectTeamPanel";
+import ProjectTestingPanel from "./ProjectTestingPanel";
 
 const API_BASE = "/api/v1";
 
@@ -102,6 +103,7 @@ function App({ currentUser }) {
 
   const [showMemory, setShowMemory] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
+  const [showTesting, setShowTesting] = useState(false);
   const [workspaceReady, setWorkspaceReady] = useState(false);
 
   const [versions, setVersions] =
@@ -2714,12 +2716,26 @@ function App({ currentUser }) {
           </button>
 
           {project && currentUser && (
-            <button
-              className="ghost-button"
-              onClick={() => setShowTeam((value) => !value)}
-            >
-              {showTeam ? "Close Team" : "Team"}
-            </button>
+            <>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setShowTesting(false);
+                  setShowTeam((value) => !value);
+                }}
+              >
+                {showTeam ? "Close Team" : "Team"}
+              </button>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setShowTeam(false);
+                  setShowTesting((value) => !value);
+                }}
+              >
+                {showTesting ? "Close Testing" : "Testing & Docs"}
+              </button>
+            </>
           )}
 
           {project &&
@@ -2740,6 +2756,13 @@ function App({ currentUser }) {
         <ProjectTeamPanel
           projectId={project.project_id}
           onClose={() => setShowTeam(false)}
+        />
+      )}
+
+      {showTesting && project && (
+        <ProjectTestingPanel
+          projectId={project.project_id}
+          onClose={() => setShowTesting(false)}
         />
       )}
 
