@@ -83,6 +83,7 @@ class ProjectStore:
                         stage_status TEXT NOT NULL,
                         approved INTEGER,
                         error TEXT,
+                        owner_id TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     );
@@ -145,6 +146,31 @@ class ProjectStore:
                         event_id
                     );
                     """
+                )
+
+                # Backward-compatible schema migration for existing SQLite files.
+                project_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(projects)")
+                }
+                if "owner_id" not in project_columns:
+                    connection.execute("ALTER TABLE projects ADD COLUMN owner_id TEXT")
+
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS project_members (
+                        project_id TEXT NOT NULL,
+                        user_id TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY(project_id, user_id),
+                        FOREIGN KEY(project_id) REFERENCES projects(project_id)
+                            ON DELETE CASCADE
+                    )
+                    """
+                )
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)"
                 )
 
                 connection.commit()
@@ -229,6 +255,7 @@ class ProjectStore:
         *,
         project_id: str,
         idea: str,
+        owner_id: str | None = None,
         created_at: str | None = None,
     ) -> dict:
 
@@ -249,10 +276,11 @@ class ProjectStore:
                         stage_status,
                         approved,
                         error,
+                        owner_id,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         project_id,
@@ -262,7 +290,7 @@ class ProjectStore:
                         "idle",
                         "idle",
                         None,
-                        None,
+                        owner_id,
                         now,
                         now,
                     ),
@@ -288,6 +316,24 @@ class ProjectStore:
                 connection.close()
 
         return self.get_project(project_id)
+
+    def claim_unowned_projects(self, owner_id: str) -> int:
+        """Assign legacy projects with no owner to the first configured admin."""
+        with self._lock:
+            connection = self._connect()
+            try:
+                cursor = connection.execute(
+                    """
+                    UPDATE projects
+                    SET owner_id = ?
+                    WHERE owner_id IS NULL
+                    """,
+                    (owner_id,),
+                )
+                connection.commit()
+                return cursor.rowcount
+            finally:
+                connection.close()
 
     def get_project(
         self,
@@ -340,6 +386,9 @@ class ProjectStore:
     def list_projects(
         self,
         limit: int = 50,
+        *,
+        user_id: str | None = None,
+        is_admin: bool = False,
     ) -> list[dict]:
 
         safe_limit = max(
@@ -351,15 +400,30 @@ class ProjectStore:
             connection = self._connect()
 
             try:
-                rows = connection.execute(
-                    """
-                    SELECT *
-                    FROM projects
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    (safe_limit,),
-                ).fetchall()
+                if is_admin or user_id is None:
+                    rows = connection.execute(
+                        """
+                        SELECT *
+                        FROM projects
+                        ORDER BY updated_at DESC
+                        LIMIT ?
+                        """,
+                        (safe_limit,),
+                    ).fetchall()
+                else:
+                    rows = connection.execute(
+                        """
+                        SELECT DISTINCT p.*
+                        FROM projects p
+                        LEFT JOIN project_members pm
+                            ON pm.project_id = p.project_id
+                           AND pm.user_id = ?
+                        WHERE p.owner_id = ? OR pm.user_id IS NOT NULL
+                        ORDER BY p.updated_at DESC
+                        LIMIT ?
+                        """,
+                        (user_id, user_id, safe_limit),
+                    ).fetchall()
 
                 projects = []
 
@@ -431,6 +495,7 @@ class ProjectStore:
             "stage_status",
             "approved",
             "error",
+            "owner_id",
             "updated_at",
         }
 
