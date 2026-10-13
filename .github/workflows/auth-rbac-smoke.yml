@@ -28,7 +28,7 @@ jobs:
         run: python test_auth_security.py
       - name: Import FastAPI application
         working-directory: backend
-        run: python -c "from app.main import app; print(f'Specra routes loaded: {len(app.routes)}')"
+        run: python -c "from app.main import app; print(len(app.routes))"
 
   frontend-build:
     runs-on: ubuntu-latest
