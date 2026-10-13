@@ -69,7 +69,7 @@ class CodeGenerationQualityTests(unittest.TestCase):
                 GeneratedFileDraft(
                     path="backend/app/main.py",
                     purpose="Custom API entry point",
-                    content="from fastapi import FastAPI\\napp = FastAPI()\\n",
+                    content="from fastapi import FastAPI\napp = FastAPI()\n",
                 ),
             ])
         )
