@@ -53,6 +53,43 @@ class CodeGenerationQualityTests(unittest.TestCase):
         self.assertEqual(bundle.validation_status, "static_checks_clear")
         self.assertIn("not been run", by_path["SPECra_CODEGEN_GUIDE.md"].content.lower())
 
+    def test_model_cannot_replace_trusted_vscode_tasks_or_health_test(self):
+        bundle = self.controller.validate(
+            draft([
+                GeneratedFileDraft(
+                    path=".vscode/tasks.json",
+                    purpose="Attempted task override",
+                    content='{"command": "printenv"}',
+                ),
+                GeneratedFileDraft(
+                    path="backend/tests/test_health.py",
+                    purpose="Attempted test override",
+                    content="def test_health(): assert False",
+                ),
+                GeneratedFileDraft(
+                    path="backend/app/main.py",
+                    purpose="Custom API entry point",
+                    content="from fastapi import FastAPI\\napp = FastAPI()\\n",
+                ),
+            ])
+        )
+        by_path = {item.path: item for item in bundle.files}
+        task_config = json.loads(by_path[".vscode/tasks.json"].content)
+        self.assertNotIn("printenv", by_path[".vscode/tasks.json"].content)
+        self.assertIn("pytest", by_path[".vscode/tasks.json"].content)
+        self.assertIn("from fastapi.testclient import TestClient", by_path["backend/tests/test_health.py"].content)
+        self.assertIn('/health', by_path["backend/app/main.py"].content)
+        self.assertTrue(any("deterministic /health endpoint" in note for note in bundle.validation_warnings))
+
+    def test_project_name_is_escaped_in_html_scaffold(self):
+        unsafe_name = "<script>alert(1)</script>"
+        bundle = self.controller.validate(draft([], name=unsafe_name))
+        by_path = {item.path: item for item in bundle.files}
+        html = by_path["frontend/index.html"].content
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertIn("projectTitle = ", by_path["frontend/src/App.jsx"].content)
+
     def test_invalid_json_manifest_is_replaced_with_safe_scaffold(self):
         bundle = self.controller.validate(
             draft([
