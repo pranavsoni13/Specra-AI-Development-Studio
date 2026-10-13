@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.agents.code_generator.agent import CodeGenerationAgent
 from app.core.code_bundle_store import code_bundle_store
 from app.core.document_export import safe_filename
-from app.core.security import get_current_user, require_project_roles
+from app.core.security import auth_store, get_current_user, require_project_roles
 from app.core.storage.project_store import project_store
 from app.core.testing_store import test_store
 
@@ -73,9 +73,19 @@ def _public_bundle(bundle: dict, include_files: bool = False) -> dict:
     "",
     dependencies=[Depends(require_project_roles())],
 )
-def list_code_bundles(project_id: str) -> dict:
+def list_code_bundles(
+    project_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
     _project_or_404(project_id)
-    return {"bundles": code_bundle_store.list_bundles(project_id)}
+    role = auth_store.get_project_role(project_id, user)
+    return {
+        "bundles": code_bundle_store.list_bundles(project_id),
+        "my_role": role,
+        "can_generate": role in {
+            "admin", "owner", "analyst", "architect", "developer",
+        },
+    }
 
 
 @router.post(
