@@ -216,7 +216,7 @@ class TestingRoutesTests(unittest.TestCase):
         self.assertEqual(updated.json()["suite"]["cases"][0]["status"], "passed")
 
         report = self.client.get(
-            f"/api/v1/projects/{self.project_id}/documents/test-report"
+            f"/api/v1/projects/{self.project_id}/documents/test-report?format=md"
         )
         self.assertIn("Passed: 1", report.text)
         self.assertIn("Cases marked as executed: 1", report.text)
