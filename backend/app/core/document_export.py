@@ -361,3 +361,206 @@ def safe_filename(project_name: str, project_id: str, suffix: str) -> str:
     slug = slug or "specra-project"
     short_id = re.sub(r"[^a-zA-Z0-9_-]", "", project_id)[:12]
     return f"{slug}-{short_id}.{suffix}"
+def _markdown_inline(value: str) -> str:
+    """Convert the small inline Markdown subset used by Specra into ReportLab markup."""
+    import html
+
+    escaped = html.escape(value, quote=False)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
+    escaped = re.sub(r"\x60([^\x60]+)\x60", r'<font name="Courier">\1</font>', escaped)
+    return escaped
+
+
+def _markdown_blocks(markdown: str) -> list[tuple[str, str]]:
+    """Return (kind, text) blocks for the shared PDF and PowerPoint exporters."""
+    blocks: list[tuple[str, str]] = []
+    paragraph: list[str] = []
+
+    def flush() -> None:
+        if paragraph:
+            blocks.append(("paragraph", " ".join(part.strip() for part in paragraph).strip()))
+            paragraph.clear()
+
+    for raw_line in markdown.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush()
+        elif line.startswith("# "):
+            flush()
+            blocks.append(("title", line[2:].strip()))
+        elif line.startswith("## "):
+            flush()
+            blocks.append(("heading", line[3:].strip()))
+        elif line.startswith("### "):
+            flush()
+            blocks.append(("subheading", line[4:].strip()))
+        elif line.startswith("- "):
+            flush()
+            blocks.append(("bullet", line[2:].strip()))
+        elif re.match(r"^\d+[.)]\s+", line):
+            flush()
+            blocks.append(("numbered", line))
+        else:
+            paragraph.append(line)
+    flush()
+    return blocks
+
+
+def render_document_export(markdown: str, output_format: str = "md") -> tuple[bytes, str, str]:
+    """Render a generated engineering document as Markdown, PDF, or PowerPoint."""
+    fmt = output_format.strip().lower()
+    if fmt in {"md", "markdown"}:
+        return markdown.encode("utf-8"), "md", "text/markdown; charset=utf-8"
+
+    blocks = _markdown_blocks(markdown)
+    if fmt == "pdf":
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_LEFT
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
+
+        output = io.BytesIO()
+        document = SimpleDocTemplate(
+            output,
+            pagesize=A4,
+            rightMargin=19 * mm,
+            leftMargin=19 * mm,
+            topMargin=19 * mm,
+            bottomMargin=18 * mm,
+            title=next((text for kind, text in blocks if kind == "title"), "Specra Engineering Document"),
+            author="Specra",
+        )
+        base = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            "SpecraTitle", parent=base["Title"], fontName="Helvetica-Bold",
+            fontSize=21, leading=26, textColor=colors.HexColor("#17365D"),
+            alignment=TA_LEFT, spaceAfter=12,
+        )
+        heading_style = ParagraphStyle(
+            "SpecraHeading", parent=base["Heading1"], fontName="Helvetica-Bold",
+            fontSize=14, leading=18, textColor=colors.HexColor("#245A81"),
+            spaceBefore=12, spaceAfter=6, keepWithNext=True,
+        )
+        subheading_style = ParagraphStyle(
+            "SpecraSubheading", parent=base["Heading2"], fontName="Helvetica-Bold",
+            fontSize=11, leading=14, textColor=colors.HexColor("#354A5F"),
+            spaceBefore=8, spaceAfter=4, keepWithNext=True,
+        )
+        body_style = ParagraphStyle(
+            "SpecraBody", parent=base["BodyText"], fontName="Helvetica",
+            fontSize=9.5, leading=13, spaceAfter=5, textColor=colors.HexColor("#202833"),
+        )
+        story = []
+        for kind, text in blocks:
+            safe_text = _markdown_inline(text)
+            if kind == "title":
+                story.extend([Paragraph(safe_text, title_style), HRFlowable(width="100%", color=colors.HexColor("#D7E3F0")), Spacer(1, 8)])
+            elif kind == "heading":
+                story.append(Paragraph(safe_text, heading_style))
+            elif kind == "subheading":
+                story.append(Paragraph(safe_text, subheading_style))
+            elif kind == "bullet":
+                story.append(Paragraph("&#8226;&nbsp; " + safe_text, body_style))
+            else:
+                story.append(Paragraph(safe_text, body_style))
+        if not story:
+            story.append(Paragraph("Specra Engineering Document", title_style))
+
+        def add_page_number(canvas, doc) -> None:
+            canvas.saveState()
+            canvas.setStrokeColor(colors.HexColor("#D7E3F0"))
+            canvas.line(19 * mm, 13 * mm, A4[0] - 19 * mm, 13 * mm)
+            canvas.setFont("Helvetica", 8)
+            canvas.setFillColor(colors.HexColor("#64748B"))
+            canvas.drawString(19 * mm, 8 * mm, "Generated by Specra - Review before approval")
+            canvas.drawRightString(A4[0] - 19 * mm, 8 * mm, f"Page {doc.page}")
+            canvas.restoreState()
+
+        document.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
+        return output.getvalue(), "pdf", "application/pdf"
+
+    if fmt in {"ppt", "pptx", "powerpoint"}:
+        from pptx import Presentation
+        from pptx.dml.color import RGBColor
+        from pptx.enum.text import PP_ALIGN
+        from pptx.util import Inches, Pt
+
+        presentation = Presentation()
+        presentation.core_properties.title = next(
+            (text for kind, text in blocks if kind == "title"),
+            "Specra Engineering Document",
+        )
+        presentation.core_properties.author = "Specra"
+        presentation.core_properties.subject = "Generated engineering document"
+        presentation.slide_width = Inches(13.333)
+        presentation.slide_height = Inches(7.5)
+
+        cover = presentation.slides.add_slide(presentation.slide_layouts[0])
+        cover.shapes.title.text = presentation.core_properties.title
+        cover.shapes.title.text_frame.paragraphs[0].font.size = Pt(28)
+        cover.shapes.title.text_frame.paragraphs[0].font.bold = True
+        cover.shapes.title.text_frame.paragraphs[0].font.color.rgb = RGBColor(23, 54, 93)
+        subtitle = cover.placeholders[1]
+        subtitle.text = "Generated by Specra - Draft document - Review before approval"
+        subtitle.text_frame.paragraphs[0].font.size = Pt(16)
+
+        sections: list[tuple[str, list[tuple[str, str]]]] = []
+        current_title = "Document Overview"
+        current_items: list[tuple[str, str]] = []
+        for kind, text in blocks:
+            if kind == "title":
+                continue
+            if kind == "heading":
+                if current_items:
+                    sections.append((current_title, current_items))
+                current_title = text
+                current_items = []
+                continue
+            limit = 360
+            if len(text) > limit:
+                current_items.extend((kind, text[index:index + limit]) for index in range(0, len(text), limit))
+            else:
+                current_items.append((kind, text))
+        if current_items:
+            sections.append((current_title, current_items))
+        if not sections:
+            sections = [("Document Overview", [("paragraph", "No content was recorded.")])]
+
+        for section_title, items in sections:
+            chunks = [items[index:index + 6] for index in range(0, len(items), 6)] or [[]]
+            for chunk_index, chunk in enumerate(chunks, start=1):
+                slide = presentation.slides.add_slide(presentation.slide_layouts[1])
+                slide.shapes.title.text = (
+                    section_title if len(chunks) == 1
+                    else f"{section_title} ({chunk_index}/{len(chunks)})"
+                )
+                slide.shapes.title.text_frame.paragraphs[0].font.size = Pt(24)
+                slide.shapes.title.text_frame.paragraphs[0].font.color.rgb = RGBColor(23, 54, 93)
+                frame = slide.placeholders[1].text_frame
+                frame.clear()
+                frame.word_wrap = True
+                for index, (kind, text) in enumerate(chunk):
+                    paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
+                    paragraph.text = ("• " if kind == "bullet" else "") + text
+                    paragraph.level = 0
+                    paragraph.font.size = Pt(15 if kind in {"subheading", "heading"} else 13)
+                    paragraph.font.bold = kind in {"subheading", "heading"}
+                    paragraph.font.color.rgb = RGBColor(32, 40, 51)
+                    paragraph.space_after = Pt(8)
+                footer = slide.shapes.add_textbox(Inches(0.6), Inches(7.13), Inches(12.1), Inches(0.2))
+                footer.text_frame.text = "Specra - Draft generated from saved project artifacts"
+                footer.text_frame.paragraphs[0].font.size = Pt(8)
+                footer.text_frame.paragraphs[0].font.color.rgb = RGBColor(100, 116, 139)
+                footer.text_frame.paragraphs[0].alignment = PP_ALIGN.RIGHT
+
+        output = io.BytesIO()
+        presentation.save(output)
+        return (
+            output.getvalue(),
+            "pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
+
+    raise ValueError("Unsupported document format. Choose md, pdf, or pptx.")
