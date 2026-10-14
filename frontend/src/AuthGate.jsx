@@ -266,6 +266,7 @@ export default function AuthGate({ children }) {
     bootstrap_token: "",
   });
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
