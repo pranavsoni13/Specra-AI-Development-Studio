@@ -23,6 +23,53 @@ class LocalLLMClient:
         self.num_predict = num_predict
         self.keep_alive = keep_alive
         self.debug = debug
+        self.provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower() or "ollama"
+        self._openai_client = None
+
+        if self.provider not in {"ollama", "xai", "openrouter"}:
+            raise ValueError(
+                "LLM_PROVIDER must be one of: ollama, xai, openrouter."
+            )
+
+        if self.provider in {"xai", "openrouter"}:
+            # Both providers expose OpenAI-compatible chat completions.
+            from openai import OpenAI
+
+            api_key_env = (
+                "XAI_API_KEY" if self.provider == "xai"
+                else "OPENROUTER_API_KEY"
+            )
+            api_key = (
+                os.getenv(api_key_env, "").strip()
+                or os.getenv("LLM_API_KEY", "").strip()
+            )
+            if not api_key:
+                raise RuntimeError(
+                    f"LLM_PROVIDER='{self.provider}' requires {api_key_env} "
+                    "or LLM_API_KEY to be set in the server environment."
+                )
+
+            default_base_url = (
+                "https://api.x.ai/v1"
+                if self.provider == "xai"
+                else "https://openrouter.ai/api/v1"
+            )
+            base_url = (
+                os.getenv("LLM_BASE_URL", "").strip()
+                or default_base_url
+            )
+            client_options = {
+                "api_key": api_key,
+                "base_url": base_url,
+                "timeout": 180.0,
+            }
+            if self.provider == "openrouter":
+                client_options["default_headers"] = {
+                    "HTTP-Referer": "https://specra-ai-development-studio.vercel.app",
+                    "X-Title": "Specra AI Development Studio",
+                }
+            self._openai_client = OpenAI(**client_options)
+            return
 
         # When OLLAMA_HOST is set, connect to that host explicitly.
         host = os.getenv("OLLAMA_HOST", "").strip()
@@ -58,6 +105,15 @@ class LocalLLMClient:
             raise ValueError("User prompt cannot be empty.")
 
         schema = output_schema.model_json_schema()
+
+        if self.provider in {"xai", "openrouter"}:
+            return self._generate_openai_structured(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                output_schema=output_schema,
+                schema=schema,
+            )
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -113,6 +169,100 @@ class LocalLLMClient:
                 user_prompt=messages[1]["content"],
                 output=content,
             )
+
+        return self._validate_output(content, output_schema)
+
+    def _generate_openai_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        output_schema: Type[T],
+        schema: dict,
+    ) -> T:
+        """Generate schema-validated JSON with xAI or OpenRouter."""
+        schema_text = json.dumps(
+            schema,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    system_prompt
+                    + "\n\nReturn only a JSON object matching the "
+                    "schema provided with this request."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    user_prompt
+                    + "\n\nOUTPUT JSON SCHEMA (follow exactly):\n"
+                    + schema_text
+                    + "\nReturn only the JSON object. Do not wrap it in Markdown."
+                ),
+            },
+        ]
+
+        request = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": 0,
+            "max_tokens": self.num_predict,
+            "stream": False,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": output_schema.__name__.lower(),
+                    "strict": True,
+                    "schema": schema,
+                },
+            },
+        }
+
+        try:
+            response = self._openai_client.chat.completions.create(**request)
+        except Exception as exc:
+            # Some OpenAI-compatible models do not implement strict JSON
+            # Schema mode. Retry only on a provider's explicit HTTP 400 response
+            # using JSON-object mode; authentication, rate-limit, and server
+            # errors should remain visible to the caller.
+            from openai import BadRequestError
+
+            if not isinstance(exc, BadRequestError):
+                raise
+            request["response_format"] = {"type": "json_object"}
+            response = self._openai_client.chat.completions.create(**request)
+
+        choices = getattr(response, "choices", None) or []
+        content = (
+            getattr(getattr(choices[0], "message", None), "content", None)
+            if choices else None
+        )
+        if not content:
+            raise RuntimeError(
+                f"{self.provider} returned an empty response for model "
+                f"'{self.model_name}'."
+            )
+
+        if self.debug:
+            usage = getattr(response, "usage", None)
+            print("\n[LLM Diagnostics]")
+            print(f"Provider: {self.provider}")
+            print(f"Model: {self.model_name}")
+            print(
+                "Prompt characters: "
+                f"{len(messages[0]['content']) + len(messages[1]['content'])}"
+            )
+            print(f"Output characters: {len(content)}")
+            if usage is not None:
+                prompt_tokens = getattr(usage, "prompt_tokens", None)
+                output_tokens = getattr(usage, "completion_tokens", None)
+                if prompt_tokens is not None:
+                    print(f"Prompt tokens: {prompt_tokens}")
+                if output_tokens is not None:
+                    print(f"Output tokens: {output_tokens}")
 
         return self._validate_output(content, output_schema)
 
