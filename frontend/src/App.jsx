@@ -87,6 +87,7 @@ function App({ currentUser }) {
     useState("");
 
   const [error, setError] = useState("");
+  const [refinementError, setRefinementError] = useState("");
 
   const [showJson, setShowJson] =
     useState(false);
@@ -125,6 +126,8 @@ function App({ currentUser }) {
     refinementInstruction,
     setRefinementInstruction,
   ] = useState("");
+
+  const isViewer = currentUser?.role === "viewer";
 
   const activeData = useMemo(() => {
     if (!artifacts) {
@@ -939,10 +942,7 @@ function App({ currentUser }) {
       refinementInstruction.trim();
 
     if (!instruction) {
-      setError(
-        "Write what you want changed first."
-      );
-
+      setRefinementError("Write what you want changed first.");
       return;
     }
 
@@ -977,6 +977,7 @@ function App({ currentUser }) {
 
     setRefining(true);
     setError("");
+    setRefinementError("");
     setShowJson(false);
 
     try {
@@ -1048,12 +1049,11 @@ function App({ currentUser }) {
           : `${agent?.label || "Artifact"} regenerated.`
       );
     } catch (err) {
-      setError(
+      setRefinementError(
         err instanceof Error
           ? err.message
           : "Refinement failed."
       );
-
       setStatusMessage("");
     } finally {
       setRefining(false);
@@ -1307,6 +1307,7 @@ function App({ currentUser }) {
     );
 
     setError("");
+    setRefinementError("");
     setShowJson(false);
     setShowVersions(false);
   }
@@ -1321,6 +1322,7 @@ function App({ currentUser }) {
     );
 
     setError("");
+    setRefinementError("");
   }
 
   function closeRefinement() {
@@ -1331,6 +1333,7 @@ function App({ currentUser }) {
     setRefinementInstruction(
       ""
     );
+    setRefinementError("");
   }
 
   function openVersionPanel(
@@ -2234,21 +2237,15 @@ function App({ currentUser }) {
                   </span>
                 </button>
 
-                <button
-                  className="version-restore"
-                  disabled={
-                    refining ||
-                    loading
-                  }
-                  onClick={() =>
-                    restoreVersion(
-                      stage,
-                      version.version_number
-                    )
-                  }
-                >
-                  Restore
-                </button>
+                {!isViewer && (
+                  <button
+                    className="version-restore"
+                    disabled={refining || loading}
+                    onClick={() => restoreVersion(stage, version.version_number)}
+                  >
+                    Restore
+                  </button>
+                )}
               </div>
             )
           )}
@@ -3140,14 +3137,16 @@ function App({ currentUser }) {
                   Project Memory
                 </button>
 
-                <button
-                  className="secondary-button"
-                  onClick={rerunFullWorkflow}
-                  disabled={loading || refining}
-                  title="Run all four agents again using saved project memory"
-                >
-                  {loading ? "Running..." : "Run All Again"}
-                </button>
+                {!isViewer && (
+                  <button
+                    className="secondary-button"
+                    onClick={rerunFullWorkflow}
+                    disabled={loading || refining}
+                    title="Run all four agents again using saved project memory"
+                  >
+                    {loading ? "Running..." : "Run All Again"}
+                  </button>
+                )}
 
                 <button
                   className="secondary-button"
@@ -3170,20 +3169,15 @@ function App({ currentUser }) {
                   Activity
                 </button>
 
-                <button
-                  className="refine-global-button"
-                  onClick={
-                    openGlobalRefinement
-                  }
-                  disabled={
-                    loading ||
-                    refining ||
-                    project.status !==
-                      "completed"
-                  }
-                >
-                  Refine Entire Project
-                </button>
+                {!isViewer && (
+                  <button
+                    className="refine-global-button"
+                    onClick={openGlobalRefinement}
+                    disabled={loading || refining || project.status !== "completed"}
+                  >
+                    Refine Entire Project
+                  </button>
+                )}
               </div>
             </div>
 
@@ -3195,7 +3189,7 @@ function App({ currentUser }) {
               />
             )}
 
-            {getStaleAgents().length >
+            {!isViewer && getStaleAgents().length >
               0 && (
               <div className="stale-banner">
                 <div className="stale-banner-copy">
@@ -3232,9 +3226,14 @@ function App({ currentUser }) {
               </div>
             )}
 
-            {refinementMode ===
-              "global" && (
+            {!isViewer && refinementMode === "global" && (
               <div className="global-refinement">
+                {refinementError && (
+                  <div className="error-box refinement-inline-error" role="alert">
+                    <div className="error-title">Action not permitted</div>
+                    <div className="error-message">{refinementError}</div>
+                  </div>
+                )}
                 <div>
                   <div className="refinement-kicker">
                     GLOBAL PROJECT INSTRUCTION
@@ -3551,23 +3550,21 @@ function App({ currentUser }) {
                       </button>
                     )}
 
-                    <button
-                      className="secondary-button"
-                      onClick={() =>
-                        openAgentRefinement(
-                          activeArtifact
-                        )
-                      }
-                      disabled={
+                    {!isViewer && (
+                      <button
+                        className="secondary-button"
+                        onClick={() => openAgentRefinement(activeArtifact)}
+                        disabled={
                         loading ||
                         refining ||
                         project.status !==
                           "completed" ||
                         !activeData
                       }
-                    >
-                      Ask this agent
-                    </button>
+                      >
+                        Ask this agent
+                      </button>
+                    )}
 
                     <div className="artifact-status">
                       {
@@ -3592,10 +3589,14 @@ function App({ currentUser }) {
                 {showVersions &&
                   renderVersionHistory()}
 
-                {!showVersions &&
-                  refinementMode ===
-                    activeArtifact && (
+                {!isViewer && !showVersions && refinementMode === activeArtifact && (
                     <div className="agent-refinement-box">
+                      {refinementError && (
+                        <div className="error-box refinement-inline-error" role="alert">
+                          <div className="error-title">Action not permitted</div>
+                          <div className="error-message">{refinementError}</div>
+                        </div>
+                      )}
                       <div className="refinement-kicker">
                         AI REFINEMENT
                       </div>
@@ -3672,9 +3673,7 @@ function App({ currentUser }) {
                     </div>
                   )}
 
-                {!showVersions &&
-                  !refinementMode &&
-                  activeData && (
+                {!isViewer && !showVersions && !refinementMode && activeData && (
                     <div className="quick-edit-bar">
                       <div>
                         <div className="quick-edit-title">
