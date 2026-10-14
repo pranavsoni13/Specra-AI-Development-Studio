@@ -89,7 +89,7 @@ class LLMProviderClientTests(unittest.TestCase):
         self.assertEqual(options["base_url"], "https://api.x.ai/v1")
         request = openai_factory.return_value.chat.completions.create.call_args.kwargs
         self.assertEqual(request["model"], "grok-4.7")
-        self.assertEqual(request["response_format"]["type"], "json_schema")
+        self.assertEqual(request["response_format"]["type"], "json_object")
 
     def test_openrouter_sets_routing_metadata(self):
         with patch.dict(
@@ -123,7 +123,7 @@ class LLMProviderClientTests(unittest.TestCase):
         )
         self.assertEqual(
             options["default_headers"]["X-OpenRouter-Title"],
-            "Specra AI Development Studio",
+            "Specra",
         )
 
     def test_hosted_provider_requires_key(self):
