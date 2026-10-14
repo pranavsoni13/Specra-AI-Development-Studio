@@ -166,3 +166,20 @@ This project is distributed under the MIT License. See [LICENSE](LICENSE).
 - The browser remembers the last project, selected artifact, and scroll position. Browser storage cannot recover server-side records that have been lost.
 - Hosted SQLite and vector files need durable database/storage before relying on projects surviving backend restarts and redeploys.
 - Project-context vector indexing is opt-in with `ENABLE_PROJECT_CONTEXT_RAG=true`. It is disabled by default on low-memory hosting; saved text still works as context for the full workflow without a vector index.
+
+## Integrated refinement: GenAI, testing, documents, and secure accounts
+
+The feature pull request adds the capabilities below on top of the existing provider-flexible/LangGraph and Blueprint Quality Lab foundations.
+
+- **Project Copilot:** project-scoped chat grounded in saved artifacts/context, with proposed refinements requiring user approval.
+- **Detailed Testing Workspace:** requirement-linked test cases with execution statuses stored separately from generated suggestions.
+- **Document exports:** SRS, SDD, Test Report, and traceability CSV. Reports must not claim proposed tests were executed.
+- **Code Studio:** reviewable FastAPI + React/Vite starter bundles, file previews, static validation, and ZIP export. Generated code is not executed inside the Specra API process.
+- **Account sessions and job-area roles:** login/logout, administrator-managed users, project membership, and permission checks in the API.
+- **Public registration:** after the first admin is initialized, logged-out users see **New to Specra? Create an account**. Registered users start as `viewer`, without project access until an admin/project owner assigns them. Set `ALLOW_PUBLIC_SIGNUP=false` to disable registration.
+
+### Deployment safety checklist
+
+These changes are reviewed on a branch and are not part of the live deployment yet. Render is configured to auto-deploy from `main`. Before merging the authenticated workspace, set a server-only `AUTH_BOOTSTRAP_TOKEN`, set `AUTH_COOKIE_SECURE=true`, and back up/migrate existing SQLite project data to durable storage. Do not merge/deploy until these requirements are satisfied.
+
+Self-registration is not email-verified in this iteration. Viewer accounts cannot read private projects unless explicitly assigned to a project.

@@ -1,14 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.agents.requirement_analyst.agent import RequirementAnalyst
 from app.agents.requirement_analyst.schemas import RequirementAnalysis
 from app.core.errors.exceptions import AgentExecutionError
+from app.core.security import require_roles
 
 
 router = APIRouter(
     prefix="/api/v1/requirements",
     tags=["Requirements"],
+    dependencies=[Depends(require_roles("analyst"))],
 )
 
 requirement_analyst = RequirementAnalyst()
