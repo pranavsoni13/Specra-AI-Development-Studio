@@ -11,6 +11,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.11
+      - key: AUTH_BOOTSTRAP_TOKEN
+        sync: false
       - key: OLLAMA_HOST
         value: https://ollama.com
       - key: OLLAMA_API_KEY
