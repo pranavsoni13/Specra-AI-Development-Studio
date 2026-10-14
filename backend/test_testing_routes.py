@@ -161,7 +161,7 @@ class TestingRoutesTests(unittest.TestCase):
         for document_type, media_substring, expected_text in documents:
             with self.subTest(document_type=document_type):
                 response = self.client.get(
-                    f"/api/v1/projects/{self.project_id}/documents/{document_type}"
+                    f"/api/v1/projects/{self.project_id}/documents/{document_type}" + ("" if document_type == "traceability" else "?format=md")
                 )
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertIn(media_substring, response.headers["content-type"])
@@ -169,10 +169,30 @@ class TestingRoutesTests(unittest.TestCase):
                 self.assertIn(expected_text, response.text)
 
         report = self.client.get(
-            f"/api/v1/projects/{self.project_id}/documents/test-report"
+            f"/api/v1/projects/{self.project_id}/documents/test-report?format=md"
         )
         self.assertIn("Passed: 0", report.text)
         self.assertIn("Not run: 1", report.text)
+
+    def test_pdf_and_powerpoint_document_exports(self):
+        for document_type, expected_type, expected_extension, magic in [
+            ("srs", "application/pdf", ".pdf", b"%PDF-"),
+            (
+                "sdd",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                ".pptx",
+                b"PK",
+            ),
+        ]:
+            with self.subTest(document_type=document_type):
+                format_name = "pptx" if expected_extension == ".pptx" else "pdf"
+                response = self.client.get(
+                    f"/api/v1/projects/{self.project_id}/documents/{document_type}?format={format_name}"
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertIn(expected_type, response.headers["content-type"])
+                self.assertTrue(response.content.startswith(magic))
+                self.assertIn(expected_extension, response.headers["content-disposition"])
 
     def test_only_authorized_testers_can_record_execution_status(self):
         with patch(
