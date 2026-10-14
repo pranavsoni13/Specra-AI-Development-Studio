@@ -3,6 +3,7 @@ name: Testing workspace and document export checks
 on:
   push:
     branches:
+      - main
       - "feature/**"
   pull_request:
     branches:
