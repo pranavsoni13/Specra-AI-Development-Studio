@@ -417,7 +417,8 @@ export default function AuthGate({ children }) {
   // registration is disabled by the backend, explain why instead of silently
   // making the option disappear from the signed-out screen.
   const workspaceInitialized = !setup.needs_bootstrap;
-  const registrationEnabled = setup.public_signup_enabled === true;
+  // Older local backend instances may omit this field; the backend default is enabled.
+  const registrationEnabled = setup.public_signup_enabled !== false;
   const activeMode = showBootstrap && mode === "bootstrap"
     ? "bootstrap"
     : workspaceInitialized && registrationEnabled && mode === "register"
@@ -523,24 +524,29 @@ export default function AuthGate({ children }) {
         )}
 
         {workspaceInitialized && (
-          registrationEnabled ? (
+          <>
             <button
               className="auth-mode-switch"
               type="button"
               onClick={() => {
                 setError("");
+                if (!registrationEnabled) {
+                  setNotice("Public sign-up is disabled for this workspace. Ask the administrator to enable ALLOW_PUBLIC_SIGNUP=true or create your account from Manage accounts.");
+                  setMode("login");
+                  return;
+                }
                 setNotice("");
                 setMode((value) => value === "register" ? "login" : "register");
               }}
             >
               {activeMode === "register" ? "Already have an account? Sign in" : "New to Specra? Create an account"}
             </button>
-          ) : (
-            <p className="auth-security-note" role="status">
-              Public sign-up is disabled for this workspace. Ask the administrator to enable
-              <code> ALLOW_PUBLIC_SIGNUP=true </code> or create your account from Manage accounts.
-            </p>
-          )
+            {!registrationEnabled && (
+              <p className="auth-security-note" role="status">
+                Public sign-up is currently disabled by the workspace administrator.
+              </p>
+            )}
+          </>
         )}
 
         <div className="auth-security-note">
