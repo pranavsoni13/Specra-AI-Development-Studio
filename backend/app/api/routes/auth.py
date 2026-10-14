@@ -27,6 +27,12 @@ class BootstrapRequest(BaseModel):
     password: str = Field(min_length=12, max_length=256)
 
 
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    display_name: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=12, max_length=256)
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=256)
@@ -53,6 +59,11 @@ class UserUpdateRequest(BaseModel):
         "tester", "reviewer", "developer", "viewer",
     ] | None = None
     is_active: bool | None = None
+
+
+def _public_signup_enabled() -> bool:
+    value = os.getenv("ALLOW_PUBLIC_SIGNUP", "true").strip().casefold()
+    return value not in {"0", "false", "no", "off"}
 
 
 def _cookie_secure() -> bool:
@@ -91,6 +102,9 @@ def get_setup_status() -> dict:
     return {
         "needs_bootstrap": needs_bootstrap,
         "bootstrap_configured": configured if needs_bootstrap else False,
+        "public_signup_enabled": (
+            not needs_bootstrap and _public_signup_enabled()
+        ),
     }
 
 
@@ -133,6 +147,56 @@ def bootstrap_admin(
     project_store.claim_unowned_projects(user["user_id"])
     public = _new_session(response, user)
     return {"user": public, "message": "Administrator account created."}
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+def register(
+    request: RegisterRequest,
+    http_request: Request,
+) -> dict:
+    if not _public_signup_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public registration is currently disabled. Ask a Specra administrator to create your account.",
+        )
+    if auth_store.user_count() == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The workspace administrator must be initialized before registration.",
+        )
+
+    client_host = http_request.client.host if http_request.client else None
+    # Reuse the database-backed 5-attempt/15-minute throttle for registrations.
+    # Count successful registrations as well so a single client cannot create
+    # unlimited accounts in a short burst.
+    throttle_identity = auth_store.login_identity("public-registration", client_host)
+    if auth_store.is_login_locked(throttle_identity):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many account-creation attempts from this connection. Try again in 15 minutes.",
+        )
+
+    try:
+        user = auth_store.create_user(
+            email=str(request.email),
+            display_name=request.display_name,
+            password=request.password,
+            role="viewer",
+        )
+    except ValueError as exc:
+        auth_store.record_login_failure(throttle_identity)
+        message = str(exc)
+        code = 409 if "already exists" in message else 400
+        raise HTTPException(status_code=code, detail=message) from exc
+
+    auth_store.record_login_failure(throttle_identity)
+    return {
+        "message": (
+            "Account created with Viewer access. Sign in, then ask a project "
+            "administrator to add you to a project and assign your project role."
+        ),
+        "user": auth_store.public_user(user),
+    }
 
 
 @router.post("/login")
