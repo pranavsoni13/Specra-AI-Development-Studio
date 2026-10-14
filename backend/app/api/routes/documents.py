@@ -1,29 +1,28 @@
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 from app.core.documents import render_project_document
+from app.core.security import get_current_user, require_project_roles
 from app.core.storage.project_store import project_store
 
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/documents",
     tags=["Project Documents"],
+    dependencies=[Depends(get_current_user)],
 )
 
 
-@router.get("/{document_type}")
+@router.get("/{document_type}", dependencies=[Depends(require_project_roles())])
 def download_project_document(
     project_id: str,
     document_type: Literal["srs", "sdd", "test-report"],
 ) -> Response:
     project = project_store.get_project(project_id)
     if project is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Project '{project_id}' not found.",
-        )
+        raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found.")
 
     artifacts = project_store.get_artifacts(project_id)
     if not artifacts.get("requirements"):
@@ -32,11 +31,7 @@ def download_project_document(
             detail="Generate requirements before exporting project documents.",
         )
 
-    filename, content = render_project_document(
-        document_type,
-        project,
-        artifacts,
-    )
+    filename, content = render_project_document(document_type, project, artifacts)
     return Response(
         content=content,
         media_type="text/markdown; charset=utf-8",

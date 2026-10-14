@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import ProjectMemoryPanel from "./components/ProjectMemoryPanel";
+import ProjectTeamPanel from "./ProjectTeamPanel";
+import ProjectTestingPanel from "./ProjectTestingPanel";
+import ProjectCopilotPanel from "./ProjectCopilotPanel";
+import CodeStudioPanel from "./CodeStudioPanel";
 import QualityLabPanel from "./components/QualityLabPanel";
 
 const API_BASE = "/api/v1";
@@ -71,7 +75,7 @@ function restoreScrollPosition(projectId) {
   }));
 }
 
-function App() {
+function App({ currentUser }) {
   const [idea, setIdea] = useState("");
   const [project, setProject] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -82,7 +86,6 @@ function App() {
 
   const [loading, setLoading] = useState(false);
   const [refining, setRefining] = useState(false);
-  const [downloadingDocument, setDownloadingDocument] = useState("");
 
   const [statusMessage, setStatusMessage] =
     useState("");
@@ -102,6 +105,10 @@ function App() {
     useState(false);
 
   const [showMemory, setShowMemory] = useState(false);
+  const [showTeam, setShowTeam] = useState(false);
+  const [showTesting, setShowTesting] = useState(false);
+  const [showCopilot, setShowCopilot] = useState(false);
+  const [showCodeStudio, setShowCodeStudio] = useState(false);
   const [workspaceReady, setWorkspaceReady] = useState(false);
 
   const [versions, setVersions] =
@@ -250,53 +257,6 @@ function App() {
     }
 
     return `${label} is being generated...`;
-  }
-
-  async function downloadProjectDocument(documentType) {
-    if (!project?.project_id || downloadingDocument) return;
-
-    setDownloadingDocument(documentType);
-    setError("");
-    setStatusMessage("");
-
-    try {
-      const response = await fetch(
-        API_BASE + "/projects/" + project.project_id + "/documents/" + documentType
-      );
-
-      if (!response.ok) {
-        let detail = "Could not export this document.";
-        try {
-          const data = await response.json();
-          detail = data?.detail || detail;
-        } catch {
-          // The API may return an empty or non-JSON error body.
-        }
-        throw new Error(detail);
-      }
-
-      const blob = await response.blob();
-      const objectUrl = window.URL.createObjectURL(blob);
-      const disposition = response.headers.get("Content-Disposition") || "";
-      const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
-      const projectSlug = (project.project_name || "specra-project")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "");
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = (filenameMatch && filenameMatch[1]) || (projectSlug + "-" + documentType + ".md");
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(objectUrl);
-
-      setStatusMessage(documentType.toUpperCase() + " downloaded successfully.");
-    } catch (downloadError) {
-      setError(downloadError?.message || "Document export failed.");
-    } finally {
-      setDownloadingDocument("");
-    }
   }
 
   async function fetchProjects() {
@@ -2746,7 +2706,7 @@ function App() {
         <div className="topbar-meta">
           <div className="status-dot">
             <span />
-            Ollama Cloud
+            AI Provider
           </div>
 
           <button
@@ -2760,22 +2720,103 @@ function App() {
             Projects
           </button>
 
-          {project && (
-            <button
-              className="ghost-button"
-              onClick={
-                clearProject
-              }
-              disabled={
-                loading ||
-                refining
-              }
-            >
-              New Project
-            </button>
+          {project && currentUser && (
+            <>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setShowTesting(false);
+                  setShowTeam((value) => !value);
+                }}
+              >
+                {showTeam ? "Close Team" : "Team"}
+              </button>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setShowTeam(false);
+                  setShowCopilot(false);
+                  setShowCodeStudio(false);
+                  setShowTesting((value) => !value);
+                }}
+              >
+                {showTesting ? "Close Testing" : "Testing & Docs"}
+              </button>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setShowTeam(false);
+                  setShowTesting(false);
+                  setShowCodeStudio(false);
+                  setShowCopilot((value) => !value);
+                }}
+              >
+                {showCopilot ? "Close Copilot" : "AI Copilot"}
+              </button>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setShowTeam(false);
+                  setShowTesting(false);
+                  setShowCopilot(false);
+                  setShowCodeStudio((value) => !value);
+                }}
+              >
+                {showCodeStudio ? "Close Code Studio" : "Code Studio"}
+              </button>
+            </>
           )}
+
+          {project &&
+            currentUser &&
+            ["admin", "analyst"].includes(currentUser.role) && (
+              <button
+                className="ghost-button"
+                onClick={clearProject}
+                disabled={loading || refining}
+              >
+                New Project
+              </button>
+            )}
         </div>
       </header>
+
+      {showTeam && project && (
+        <ProjectTeamPanel
+          projectId={project.project_id}
+          onClose={() => setShowTeam(false)}
+        />
+      )}
+
+      {showTesting && project && (
+        <ProjectTestingPanel
+          projectId={project.project_id}
+          onClose={() => setShowTesting(false)}
+        />
+      )}
+
+      {showCopilot && project && (
+        <ProjectCopilotPanel
+          projectId={project.project_id}
+          onClose={() => setShowCopilot(false)}
+          onUseSuggestion={(proposal) => {
+            const target = proposal.target_artifact;
+            setActiveArtifact(target);
+            setRefinementMode(target);
+            setRefinementInstruction(proposal.suggested_instruction);
+            setShowCopilot(false);
+            setError("");
+            setStatusMessage("Copilot suggestion loaded for review. No artifact has changed yet.");
+          }}
+        />
+      )}
+
+      {showCodeStudio && project && (
+        <CodeStudioPanel
+          projectId={project.project_id}
+          onClose={() => setShowCodeStudio(false)}
+        />
+      )}
 
       {showProjects && (
         <div className="projects-popover">
@@ -2882,7 +2923,9 @@ function App() {
             review.
           </p>
 
-          {!project && (
+          {!project &&
+            currentUser &&
+            ["admin", "analyst"].includes(currentUser.role) && (
             <div className="idea-card">
               <div className="input-header">
                 <div>
@@ -2954,6 +2997,20 @@ function App() {
               </div>
             </div>
           )}
+
+          {!project &&
+            currentUser &&
+            !["admin", "analyst"].includes(currentUser.role) && (
+              <div className="idea-card role-workspace-notice">
+                <div className="input-label">No project assigned yet</div>
+                <p className="hero-copy">
+                  Your account's default role is {currentUser.role}. Ask the workspace
+                  administrator to add you to an existing project with your job-area
+                  permissions, or assign you the analyst role if you need to create
+                  new projects.
+                </p>
+              </div>
+            )}
 
           {project && (
             <div className="workflow-card">
@@ -3607,39 +3664,8 @@ function App() {
 
                 {renderArtifact()}
 
+
                 <QualityLabPanel projectId={project.project_id} />
-
-                <section className="document-export-panel" aria-label="Download engineering documents">
-                  <div className="document-export-copy">
-                    <div className="result-label">ENGINEERING DOCUMENTS</div>
-                    <strong>Export this blueprint</strong>
-                    <p>Download structured, editable Markdown documents based on the saved artifacts.</p>
-                  </div>
-                  <div className="document-export-actions">
-                    <button
-                      className="secondary-button"
-                      onClick={() => downloadProjectDocument("srs")}
-                      disabled={Boolean(downloadingDocument) || !artifacts?.requirements}
-                    >
-                      {downloadingDocument === "srs" ? "Preparing SRS…" : "Download SRS"}
-                    </button>
-                    <button
-                      className="secondary-button"
-                      onClick={() => downloadProjectDocument("sdd")}
-                      disabled={Boolean(downloadingDocument) || !artifacts?.requirements}
-                    >
-                      {downloadingDocument === "sdd" ? "Preparing SDD…" : "Download SDD"}
-                    </button>
-                    <button
-                      className="secondary-button"
-                      onClick={() => downloadProjectDocument("test-report")}
-                      disabled={Boolean(downloadingDocument) || !artifacts?.requirements}
-                    >
-                      {downloadingDocument === "test-report" ? "Preparing report…" : "Download Test Report"}
-                    </button>
-                  </div>
-                </section>
-
                 {showVersions &&
                   renderVersionHistory()}
 

@@ -8,3 +8,4 @@ openai
 langgraph
 sentence-transformers
 chromadb
+email-validator
