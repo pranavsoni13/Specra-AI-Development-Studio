@@ -33,6 +33,7 @@ class AuthRouteTests(unittest.TestCase):
             {
                 "AUTH_BOOTSTRAP_TOKEN": "test-bootstrap-secret-not-real",
                 "AUTH_COOKIE_SECURE": "false",
+                "ALLOW_PUBLIC_SIGNUP": "true",
             },
             clear=False,
         )
@@ -159,6 +160,75 @@ class AuthRouteTests(unittest.TestCase):
 
         response = self.client.get(f"/api/v1/projects/{project['project_id']}")
         self.assertEqual(response.status_code, 404)
+
+
+
+    def test_public_registration_creates_viewer_but_does_not_grant_existing_projects(self):
+        self.bootstrap_admin()
+        project = self.client.post(
+            "/api/v1/projects",
+            json={"idea": "Private project for public-signup authorization test"},
+        )
+        self.assertEqual(project.status_code, 201, project.text)
+        project_id = project.json()["project_id"]
+
+        self.client.post("/api/v1/auth/logout")
+        setup_status = self.client.get("/api/v1/auth/setup-status")
+        self.assertTrue(setup_status.json()["public_signup_enabled"])
+
+        registered = self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "new-viewer@example.com",
+                "display_name": "New Viewer",
+                "password": "new-viewer-password-long",
+            },
+        )
+        self.assertEqual(registered.status_code, 201, registered.text)
+        self.assertEqual(registered.json()["user"]["role"], "viewer")
+        self.assertIn("project administrator", registered.json()["message"])
+
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "new-viewer@example.com",
+                "password": "new-viewer-password-long",
+            },
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        self.assertEqual(self.client.get("/api/v1/auth/me").json()["user"]["role"], "viewer")
+        self.assertEqual(self.client.get("/api/v1/projects").json(), [])
+        self.assertEqual(
+            self.client.get(f"/api/v1/projects/{project_id}").status_code,
+            404,
+        )
+
+    def test_public_registration_rejects_duplicate_email(self):
+        self.bootstrap_admin()
+        self.client.post("/api/v1/auth/logout")
+        payload = {
+            "email": "registered@example.com",
+            "display_name": "Registered User",
+            "password": "registered-user-password",
+        }
+        first = self.client.post("/api/v1/auth/register", json=payload)
+        self.assertEqual(first.status_code, 201, first.text)
+        duplicate = self.client.post("/api/v1/auth/register", json=payload)
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+
+    def test_public_registration_can_be_disabled_by_environment_setting(self):
+        self.bootstrap_admin()
+        self.client.post("/api/v1/auth/logout")
+        with patch.dict(os.environ, {"ALLOW_PUBLIC_SIGNUP": "false"}, clear=False):
+            response = self.client.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": "disabled-signup@example.com",
+                    "display_name": "Disabled Signup",
+                    "password": "disabled-signup-password",
+                },
+            )
+        self.assertEqual(response.status_code, 403, response.text)
 
 
 if __name__ == "__main__":
