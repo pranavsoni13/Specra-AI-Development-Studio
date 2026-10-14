@@ -37,6 +37,7 @@ function AdminAccountsPanel({ onClose }) {
   });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   const loadUsers = useCallback(async () => {
@@ -294,22 +295,56 @@ export default function AuthGate({ children }) {
     event.preventDefault();
     setBusy(true);
     setError("");
+    setNotice("");
+
+    const activeSubmitMode = (
+      mode === "bootstrap" && setup.needs_bootstrap && setup.bootstrap_configured
+    ) ? "bootstrap" : (
+      mode === "register" &&
+      !setup.needs_bootstrap &&
+      setup.public_signup_enabled
+    ) ? "register" : "login";
+
     try {
-      const endpoint = mode === "bootstrap"
+      const endpoint = activeSubmitMode === "bootstrap"
         ? "/api/v1/auth/bootstrap"
-        : "/api/v1/auth/login";
-      const body = mode === "bootstrap"
+        : activeSubmitMode === "register"
+          ? "/api/v1/auth/register"
+          : "/api/v1/auth/login";
+      const body = activeSubmitMode === "bootstrap"
         ? {
             email: form.email,
             display_name: form.display_name,
             password: form.password,
             bootstrap_token: form.bootstrap_token,
           }
-        : { email: form.email, password: form.password };
+        : activeSubmitMode === "register"
+          ? {
+              email: form.email,
+              display_name: form.display_name,
+              password: form.password,
+            }
+          : { email: form.email, password: form.password };
       const result = await apiRequest(endpoint, {
         method: "POST",
         body: JSON.stringify(body),
       });
+
+      if (activeSubmitMode === "register") {
+        setNotice(
+          result.message ||
+          "Account created. You can sign in now. A project administrator must assign you to a project."
+        );
+        setMode("login");
+        setForm((current) => ({
+          ...current,
+          password: "",
+          display_name: "",
+          bootstrap_token: "",
+        }));
+        return;
+      }
+
       setUser(result.user);
       setStatus("authenticated");
       setForm({ email: "", password: "", display_name: "", bootstrap_token: "" });
@@ -329,6 +364,9 @@ export default function AuthGate({ children }) {
     setUser(null);
     setShowAccounts(false);
     setStatus("unauthenticated");
+    setError("");
+    setNotice("");
+    setMode("login");
     try {
       setSetup(await apiRequest("/api/v1/auth/setup-status"));
     } catch {
@@ -375,7 +413,12 @@ export default function AuthGate({ children }) {
 
   const showBootstrap = setup.needs_bootstrap && setup.bootstrap_configured;
   const bootstrapBlocked = setup.needs_bootstrap && !setup.bootstrap_configured;
-  const activeMode = showBootstrap ? mode : "login";
+  const showRegistration = !setup.needs_bootstrap && setup.public_signup_enabled === true;
+  const activeMode = showBootstrap && mode === "bootstrap"
+    ? "bootstrap"
+    : showRegistration && mode === "register"
+      ? "register"
+      : "login";
 
   return (
     <main className="auth-screen">
@@ -388,12 +431,14 @@ export default function AuthGate({ children }) {
           </div>
         </div>
 
-        <div className="auth-eyebrow">{showBootstrap && activeMode === "bootstrap" ? "INITIAL SETUP" : "SECURE WORKSPACE"}</div>
-        <h1>{showBootstrap && activeMode === "bootstrap" ? "Create the first admin" : "Welcome back"}</h1>
+        <div className="auth-eyebrow">{activeMode === "bootstrap" ? "INITIAL SETUP" : activeMode === "register" ? "CREATE ACCOUNT" : "SECURE WORKSPACE"}</div>
+        <h1>{activeMode === "bootstrap" ? "Create the first admin" : activeMode === "register" ? "Create your account" : "Welcome back"}</h1>
         <p className="auth-intro">
-          {showBootstrap && activeMode === "bootstrap"
+          {activeMode === "bootstrap"
             ? "Use the one-time setup token configured on the backend. The first account becomes the workspace administrator."
-            : "Sign in with the account provided by your Specra administrator."}
+            : activeMode === "register"
+              ? "Join Specra with a new account. New accounts start with Viewer access and need a project administrator to grant project access."
+              : "Sign in to your Specra workspace, or create an account if you are new here."}
         </p>
 
         {bootstrapBlocked && (
@@ -403,7 +448,7 @@ export default function AuthGate({ children }) {
         )}
 
         <form className="auth-login-form" onSubmit={submit}>
-          {showBootstrap && activeMode === "bootstrap" && (
+          {(activeMode === "bootstrap" || activeMode === "register") && (
             <>
               <label>
                 Display name
@@ -415,16 +460,18 @@ export default function AuthGate({ children }) {
                   autoComplete="name"
                 />
               </label>
-              <label>
-                One-time setup token
-                <input
-                  type="password"
-                  value={form.bootstrap_token}
-                  onChange={(event) => setForm({ ...form, bootstrap_token: event.target.value })}
-                  required
-                  autoComplete="off"
-                />
-              </label>
+              {activeMode === "bootstrap" && (
+                <label>
+                  One-time setup token
+                  <input
+                    type="password"
+                    value={form.bootstrap_token}
+                    onChange={(event) => setForm({ ...form, bootstrap_token: event.target.value })}
+                    required
+                    autoComplete="off"
+                  />
+                </label>
+              )}
             </>
           )}
           <label>
@@ -444,17 +491,18 @@ export default function AuthGate({ children }) {
               value={form.password}
               onChange={(event) => setForm({ ...form, password: event.target.value })}
               required
-              minLength={activeMode === "bootstrap" ? 12 : 1}
+              minLength={activeMode === "bootstrap" || activeMode === "register" ? 12 : 1}
               maxLength={256}
-              autoComplete={activeMode === "bootstrap" ? "new-password" : "current-password"}
+              autoComplete={activeMode === "bootstrap" || activeMode === "register" ? "new-password" : "current-password"}
             />
           </label>
           <button className="auth-primary-button" disabled={busy || bootstrapBlocked}>
-            {busy ? "Please wait…" : activeMode === "bootstrap" ? "Create administrator" : "Sign in"}
+            {busy ? "Please wait…" : activeMode === "bootstrap" ? "Create administrator" : activeMode === "register" ? "Create account" : "Sign in"}
           </button>
         </form>
 
         {error && <p className="auth-error" role="alert">{error}</p>}
+        {notice && <p className="auth-success" role="status">{notice}</p>}
 
         {showBootstrap && (
           <button
@@ -462,6 +510,7 @@ export default function AuthGate({ children }) {
             type="button"
             onClick={() => {
               setError("");
+              setNotice("");
               setMode((value) => value === "bootstrap" ? "login" : "bootstrap");
             }}
           >
@@ -469,8 +518,22 @@ export default function AuthGate({ children }) {
           </button>
         )}
 
+        {showRegistration && (
+          <button
+            className="auth-mode-switch"
+            type="button"
+            onClick={() => {
+              setError("");
+              setNotice("");
+              setMode((value) => value === "register" ? "login" : "register");
+            }}
+          >
+            {activeMode === "register" ? "Already have an account? Sign in" : "New to Specra? Create an account"}
+          </button>
+        )}
+
         <div className="auth-security-note">
-          Your session is stored in an HttpOnly cookie. Accounts and project roles are managed by an administrator.
+          Your session is stored in an HttpOnly cookie. Self-registered accounts start as Viewers and need project membership from an administrator.
         </div>
       </section>
     </main>
