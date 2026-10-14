@@ -174,3 +174,22 @@ Specra keeps Ollama as the local default and supports xAI's Grok API and OpenRou
 
 See [docs/LLM_PROVIDERS.md](docs/LLM_PROVIDERS.md) for setup. Keep API keys in the backend's local `.env` or hosting secrets; never put them in frontend/Vite variables or commit them. Hosted API calls can incur costs. The repository CI uses mocked API responses and does not need provider credentials; run a small live smoke test only after configuring a key and verifying the selected model is available.
 
+## Refinement branch: GenAI, testing, documents, and accounts
+
+The public pull request linked below contains the current integrated feature set, built on the existing React/Vite and FastAPI project rather than rewriting it.
+
+- **GenAI runtime:** Ollama remains the default, with configurable xAI Grok and OpenRouter adapters; see `docs/LLM_PROVIDERS.md`.
+- **Orchestration:** the current four agents run through LangGraph with the existing stage callbacks and artifact names preserved.
+- **Blueprint Quality Lab:** checks requirement traceability, missing coverage, invalid requirement references, open questions, and technical-review findings. It does not execute generated application code.
+- **Project Copilot:** project-scoped answers grounded in saved artifacts and context, with proposed changes presented for approval.
+- **Testing workspace:** creates requirement-linked proposed test cases and records execution outcomes separately. Proposed tests do not count as executed tests.
+- **Engineering exports:** SRS, SDD, Test Report, and traceability matrix downloads.
+- **Code Studio:** reviewable FastAPI + React/Vite source bundle generation and ZIP export; generated code is not run inside the Specra API process.
+- **Accounts:** a one-time administrator bootstrap, login/logout, account management, and role-based project membership.
+- **Public signup:** after the initial admin is initialized, the login screen offers `New to Specra? Create an account`. Self-registered accounts start as `viewer` and receive no project membership until assigned by an administrator/project owner. Set `ALLOW_PUBLIC_SIGNUP=false` to disable registration.
+
+### Public deployment warning
+
+These changes are on a review branch and are not live on the deployed website yet. Before merging/deploying the authenticated workspace, configure a server-only `AUTH_BOOTSTRAP_TOKEN`, set `AUTH_COOKIE_SECURE=true`, and use durable storage/managed database for existing project records. Render is configured for automatic deployment from `main`, so do not merge this feature set before backing up current project data and completing those settings.
+
+Public registration is not email-verified in this iteration; newly created accounts have no access to private project records unless explicitly assigned to a project.
