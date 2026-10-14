@@ -33,6 +33,7 @@ export default function ProjectTestingPanel({ projectId, onClose }) {
   const [message, setMessage] = useState("");
   const [drafts, setDrafts] = useState({});
   const [savingTest, setSavingTest] = useState("");
+  const [documentFormat, setDocumentFormat] = useState("pdf");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -158,8 +159,15 @@ export default function ProjectTestingPanel({ projectId, onClose }) {
   }
 
   function downloadUrl(kind) {
-    return `/api/v1/projects/${encodeURIComponent(projectId)}/documents/${kind}`;
+    const base = `/api/v1/projects/${encodeURIComponent(projectId)}/documents/${kind}`;
+    return kind === "traceability" ? base : `${base}?format=${documentFormat}`;
   }
+
+  const documentFormatLabel = documentFormat === "pdf"
+    ? "PDF"
+    : documentFormat === "pptx"
+      ? "PowerPoint"
+      : "Markdown";
 
   return (
     <section className="testing-workspace-panel">
@@ -172,20 +180,34 @@ export default function ProjectTestingPanel({ projectId, onClose }) {
         <button className="auth-secondary-button" onClick={onClose}>Close</button>
       </div>
 
+      <div className="testing-export-options">
+        <label htmlFor="document-export-format">Download format</label>
+        <select
+          id="document-export-format"
+          value={documentFormat}
+          onChange={(event) => setDocumentFormat(event.target.value)}
+        >
+          <option value="pdf">PDF document (.pdf)</option>
+          <option value="pptx">PowerPoint presentation (.pptx)</option>
+          <option value="md">Markdown (.md)</option>
+        </select>
+        <span>Choose the format for SRS, SDD, and test reports. Traceability remains CSV.</span>
+      </div>
+
       <div className="testing-document-grid">
         <a href={downloadUrl("srs")} className="testing-document-link">
-          <span className="testing-document-icon">SRS</span>
-          <span><strong>Requirements Specification</strong><small>Download Markdown</small></span>
+          <span className="testing-document-icon">{documentFormat === "pdf" ? "PDF" : documentFormat === "pptx" ? "PPT" : "SRS"}</span>
+          <span><strong>Requirements Specification</strong><small>Download {documentFormatLabel}</small></span>
           <span className="testing-download-arrow">↓</span>
         </a>
         <a href={downloadUrl("sdd")} className="testing-document-link">
-          <span className="testing-document-icon">SDD</span>
-          <span><strong>Design Description</strong><small>Download Markdown</small></span>
+          <span className="testing-document-icon">{documentFormat === "pdf" ? "PDF" : documentFormat === "pptx" ? "PPT" : "SDD"}</span>
+          <span><strong>Design Description</strong><small>Download {documentFormatLabel}</small></span>
           <span className="testing-download-arrow">↓</span>
         </a>
         <a href={downloadUrl("test-report")} className="testing-document-link">
-          <span className="testing-document-icon">QA</span>
-          <span><strong>Test Report</strong><small>Shows recorded results only</small></span>
+          <span className="testing-document-icon">{documentFormat === "pdf" ? "PDF" : documentFormat === "pptx" ? "PPT" : "QA"}</span>
+          <span><strong>Test Report</strong><small>{documentFormatLabel} · recorded results only</small></span>
           <span className="testing-download-arrow">↓</span>
         </a>
         <a href={downloadUrl("traceability")} className="testing-document-link">
