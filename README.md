@@ -167,3 +167,10 @@ This project is distributed under the MIT License. See [LICENSE](LICENSE).
 ## Blueprint Quality Lab
 
 Run deterministic checks against the saved engineering blueprint to identify functional requirements missing from the plan, architecture components, or API capabilities; unresolved requirement references; open clarification questions; and technical review findings. The result is a **blueprint consistency report**, not proof that generated application code has been executed. Use the Testing Workspace to design test cases, record execution evidence, and export an honest Test Report. Code Studio produces a reviewable project bundle for download; untrusted generated code is not executed inside the Specra API server.
+
+## Configurable LLM providers
+
+Specra keeps Ollama as the local default and supports xAI's Grok API and OpenRouter through the shared structured-output client. Every response is validated against the same Pydantic schema used by the agents. Per-agent hosted model IDs can be configured without editing agent code.
+
+See [docs/LLM_PROVIDERS.md](docs/LLM_PROVIDERS.md) for setup. Keep API keys in the backend's local `.env` or hosting secrets; never put them in frontend/Vite variables or commit them. Hosted API calls can incur costs. The repository CI uses mocked API responses and does not need provider credentials; run a small live smoke test only after configuring a key and verifying the selected model is available.
+
