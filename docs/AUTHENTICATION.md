@@ -4,7 +4,7 @@ This feature branch adds session-based sign-in, administrator-provisioned accoun
 
 ## Security model
 
-- Accounts are created by the first administrator during a one-time bootstrap, then by an administrator from the workspace UI. Public self-registration is not enabled.
+- The first administrator is created through a one-time bootstrap. After initialization, public self-registration is enabled by default and can be disabled with ALLOW_PUBLIC_SIGNUP=false. New self-registered accounts always start as viewer; they cannot access any project until an administrator/project owner grants membership.
 - Passwords are hashed with scrypt; plaintext passwords are never stored.
 - Successful sign-in creates a random session token. Only its SHA-256 hash is stored in SQLite. The browser receives an HttpOnly, SameSite=Lax cookie with a 12-hour lifetime.
 - Repeated failed sign-ins for the same normalized email/client host are temporarily locked out.
@@ -12,6 +12,16 @@ This feature branch adds session-based sign-in, administrator-provisioned accoun
 - API routes perform authorization checks. Hiding a frontend control is not the authorization boundary.
 - The role shown on the account is its default workspace role. A user must still be added to a project to access it; the project role determines their project-specific capabilities.
 - Admins manage accounts. Project owners manage membership on their project.
+
+## Public account registration
+
+After the first administrator has been created, logged-out users see **New to Specra? Create an account** if public registration is enabled. Registration requires display name, email, and a password of at least 12 characters. Successful registration returns the user to the sign-in screen with a confirmation message.
+
+- Public registration is enabled by default on a branch using this authentication feature.
+- Set `ALLOW_PUBLIC_SIGNUP=false` in the backend environment to restrict account creation to administrators.
+- Self-registration grants only the global `viewer` role. It does not grant membership in existing projects or expose project data. The project owner/admin must add the account to a project and assign its project-specific role.
+- New accounts are not automatically email-verified in this iteration. Do not use the account as proof of email ownership; add email verification before using this as a production identity system.
+- A database-backed attempt limit slows repeated registrations from the same client connection. For higher-traffic production use, move throttling to a dedicated distributed limiter and add email verification.
 
 ## Roles
 
