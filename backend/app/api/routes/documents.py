@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 from app.core.document_export import (
+    render_document_export,
     render_test_report,
     render_traceability_csv,
     safe_filename,
@@ -25,6 +26,7 @@ router = APIRouter(
 def download_project_document(
     project_id: str,
     document_type: Literal["srs", "sdd", "test-report", "traceability"],
+    format: Literal["md", "pdf", "pptx"] = "pdf",
 ) -> Response:
     project = project_store.get_project(project_id)
     if project is None:
@@ -44,17 +46,23 @@ def download_project_document(
         or "Specra Project"
     )
 
-    if document_type == "test-report":
-        filename = safe_filename(project_name, project_id, "test-report.md")
-        content = render_test_report(project, suite)
-        media_type = "text/markdown; charset=utf-8"
-    elif document_type == "traceability":
+    if document_type == "traceability":
         filename = safe_filename(project_name, project_id, "traceability.csv")
-        content = render_traceability_csv(project, artifacts, suite)
+        content = render_traceability_csv(project, artifacts, suite).encode("utf-8")
         media_type = "text/csv; charset=utf-8"
     else:
-        filename, content = render_project_document(document_type, project, artifacts)
-        media_type = "text/markdown; charset=utf-8"
+        if document_type == "test-report":
+            markdown = render_test_report(project, suite)
+            base_suffix = "test-report"
+        else:
+            _, markdown = render_project_document(document_type, project, artifacts)
+            base_suffix = document_type
+
+        try:
+            content, extension, media_type = render_document_export(markdown, format)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        filename = safe_filename(project_name, project_id, f"{base_suffix}.{extension}")
 
     return Response(
         content=content,
