@@ -6249,3 +6249,36 @@ button:disabled {
 .quality-lab-error { margin-top:12px; color:#ff9bab; font-size:12px; }
 @media(max-width:960px) { .quality-metric-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media(max-width:640px) { .quality-lab-head { flex-direction:column; } .quality-lab-head .primary-button { width:100%; } .quality-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .quality-coverage-grid { grid-template-columns:1fr; } .quality-lab-summary { flex-direction:column; } }
+
+
+.testing-export-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border, #263448);
+  border-radius: 12px;
+  background: var(--surface, #101722);
+}
+.testing-export-options label {
+  color: var(--text, #e6edf7);
+  font-size: 13px;
+  font-weight: 700;
+}
+.testing-export-options select {
+  min-width: 220px;
+  padding: 9px 12px;
+  border: 1px solid var(--border, #35445a);
+  border-radius: 8px;
+  background: var(--background, #090e16);
+  color: var(--text, #e6edf7);
+  font: inherit;
+}
+.testing-export-options span {
+  flex-basis: 100%;
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+  line-height: 1.5;
+}
