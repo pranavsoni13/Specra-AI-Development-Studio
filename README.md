@@ -12,7 +12,7 @@ Specra is an AI-assisted software engineering studio that coordinates specialize
 - **Backend health:** <https://specra-api-pranavsoni13.onrender.com/health>
 - **Interactive API docs:** <https://specra-api-pranavsoni13.onrender.com/docs>
 
-The frontend and backend are deployed separately. The health endpoint confirms backend availability; successful AI generation additionally depends on the configured Ollama API key, available model access, and remaining provider usage.
+The frontend and backend are deployed separately. The health endpoint confirms backend availability; successful AI generation additionally depends on the configured inference endpoint, valid provider credentials, available model access, and remaining provider usage.
 
 ## What it does
 
@@ -28,9 +28,13 @@ The frontend and backend are deployed separately. The health endpoint confirms b
 
 - **Frontend:** React, Vite
 - **Backend:** Python, FastAPI, Uvicorn, Pydantic
-- **Agent/model runtime:** Ollama Python client; Qwen models by default
+- **Agent/model runtime:** Ollama by default; optional xAI and OpenRouter adapters
 - **Workflow and retrieval:** LangGraph, ChromaDB, sentence-transformers
 - **Local persistence:** SQLite
+
+## LLM provider configuration
+
+Ollama remains the default and preserves the local development workflow. The shared model client also supports xAI and OpenRouter through backend environment variables. See [docs/LLM_PROVIDERS.md](docs/LLM_PROVIDERS.md) for the exact variables, model ID formats, and security notes. API keys must remain server-side and must never be committed.
 
 ## Repository layout
 
@@ -49,17 +53,12 @@ Specra-AI-Development-Studio/
 │   ├── src/
 │   ├── package.json
 │   └── vite.config.js
-├── docs/                  # Architecture and deployment notes
-├── knowledge/documents/   # Shared engineering reference corpus
-├── scripts/               # Local developer utilities
+├── docs/
+├── knowledge/documents/
+├── scripts/
 ├── render.yaml
 └── README.md
 ```
-
-Deterministic Python contract tests live in `backend/test_*.py` so they run with
-the backend package on the Python import path. The runtime project workflow is
-implemented in `backend/app/workflows/`; there are no separate root-level
-workflow or memory modules.
 
 ## Run locally
 
@@ -67,8 +66,8 @@ workflow or memory modules.
 
 - Python 3.10 or newer
 - Node.js and npm
-- Ollama installed and running
-- Enough memory to run the selected local models
+- Ollama for the default local setup, or credentials for a supported hosted provider
+- Enough memory to run the selected local models when using Ollama
 
 ### 1. Start Ollama and download the default models
 
@@ -92,7 +91,7 @@ Activate the environment, then install dependencies:
 
 ```bash
 # Windows Command Prompt
-.venv\Scripts\activate
+.venv\\Scripts\\activate
 
 # macOS/Linux
 source .venv/bin/activate
@@ -120,12 +119,24 @@ Vite serves the frontend at `http://localhost:5173` and proxies `/api` requests 
 
 ## Tests
 
-Run deterministic contract tests from `backend/`:
+Install test tooling in your active backend virtual environment:
 
 ```bash
-python test_semantic_integrity.py
-python test_refinement_flow.py
+pip install pytest
 ```
+
+Run the deterministic regression suite from the repository root:
+
+```bash
+# Windows Command Prompt
+set PYTHONPATH=backend
+python -m pytest -q backend/test_llm_providers.py backend/test_workflow_graph.py backend/test_semantic_integrity.py backend/test_refinement_flow.py
+
+# macOS/Linux
+PYTHONPATH=backend python -m pytest -q backend/test_llm_providers.py backend/test_workflow_graph.py backend/test_semantic_integrity.py backend/test_refinement_flow.py
+```
+
+These tests mock model calls; they do not require a working Ollama server or a paid API key. The provider adapter has not yet been live-tested against xAI or OpenRouter credentials, so run one small smoke test after configuring your chosen provider.
 
 Run the full multi-agent workflow with:
 
@@ -133,63 +144,42 @@ Run the full multi-agent workflow with:
 python test_project_workflow.py
 ```
 
-The full workflow invokes local language models and may take a long time on CPU-only hardware. It is not necessary to rerun it for routine documentation or frontend changes.
+The full workflow invokes language models and may take a long time on CPU-only hardware. It is not necessary to rerun it for routine documentation or frontend changes.
 
 ## Deployment notes
 
 The frontend and backend are separate deployment concerns.
 
 - The Vite proxy in `frontend/vite.config.js` applies to local development, not to a production deployment.
-- The backend uses the Ollama Python client. A cloud-hosted backend cannot reach Ollama running only on a developer's computer. Configure a reachable Ollama-compatible endpoint with `OLLAMA_HOST` and, when required by the provider, `OLLAMA_API_KEY`. Configure the agent model names to match models available from that endpoint.
-- The project currently uses SQLite for local project/context storage and ChromaDB for retrieval data. Ephemeral cloud filesystems can lose SQLite and generated vector-store files after restarts or redeployments. Use a persistent datastore/storage strategy before relying on long-term hosted data.
+- The backend needs an inference endpoint reachable from the deployed service. Provider-specific variables belong in the backend environment, not in frontend source code.
+- The project currently uses SQLite for project/context storage and ChromaDB for optional retrieval. Ephemeral cloud filesystems can lose SQLite and generated vector-store files after restarts or redeployments. Use durable storage before relying on long-term hosted project data.
 - Do not commit `.env` files, API keys, local databases, model weights, vector database runtime files, virtual environments, or build output.
 
 ## License
 
 This project is distributed under the MIT License. See [LICENSE](LICENSE).
 
-
 ## Project memory and workspace restoration
 
-- **Project Memory** stores project-scoped notes, constraints, design decisions,
-  references, and code excerpts using the project-context API.
-- The next **Run All Again** supplies up to eight saved sources (bounded to 12,000
-  characters) as secondary context to requirement analysis. The current brief
-  and explicit constraints take precedence over conflicting saved context.
-- The browser remembers the last project, selected artifact, and scroll position.
-  Browser storage cannot recover server-side records that have been lost.
-- Render Free uses an ephemeral filesystem. Use durable database/storage before
-  relying on projects surviving backend restarts and redeploys.
-- Project-context vector indexing is opt-in with `ENABLE_PROJECT_CONTEXT_RAG=true`.
-  It is disabled by default on low-memory hosting; saved text still works as
-  context for the full workflow without a vector index.
+- **Project Memory** stores project-scoped notes, constraints, design decisions, references, and code excerpts using the project-context API.
+- The next **Run All Again** supplies up to eight saved sources (bounded to 12,000 characters) as secondary context to requirement analysis. The current brief and explicit constraints take precedence over conflicting saved context.
+- The browser remembers the last project, selected artifact, and scroll position. Browser storage cannot recover server-side records that have been lost.
+- Hosted SQLite and vector files need durable database/storage before relying on projects surviving backend restarts and redeploys.
+- Project-context vector indexing is opt-in with `ENABLE_PROJECT_CONTEXT_RAG=true`. It is disabled by default on low-memory hosting; saved text still works as context for the full workflow without a vector index.
 
-## Blueprint Quality Lab
+## Integrated refinement: GenAI, testing, documents, and secure accounts
 
-Run deterministic checks against the saved engineering blueprint to identify functional requirements missing from the plan, architecture components, or API capabilities; unresolved requirement references; open clarification questions; and technical review findings. The result is a **blueprint consistency report**, not proof that generated application code has been executed. Use the Testing Workspace to design test cases, record execution evidence, and export an honest Test Report. Code Studio produces a reviewable project bundle for download; untrusted generated code is not executed inside the Specra API server.
+The feature pull request adds the capabilities below on top of the existing provider-flexible/LangGraph and Blueprint Quality Lab foundations.
 
-## Configurable LLM providers
+- **Project Copilot:** project-scoped chat grounded in saved artifacts/context, with proposed refinements requiring user approval.
+- **Detailed Testing Workspace:** requirement-linked test cases with execution statuses stored separately from generated suggestions.
+- **Document exports:** SRS, SDD, Test Report, and traceability CSV. Reports must not claim proposed tests were executed.
+- **Code Studio:** reviewable FastAPI + React/Vite starter bundles, file previews, static validation, and ZIP export. Generated code is not executed inside the Specra API process.
+- **Account sessions and job-area roles:** login/logout, administrator-managed users, project membership, and permission checks in the API.
+- **Public registration:** after the first admin is initialized, logged-out users see **New to Specra? Create an account**. Registered users start as `viewer`, without project access until an admin/project owner assigns them. Set `ALLOW_PUBLIC_SIGNUP=false` to disable registration.
 
-Specra keeps Ollama as the local default and supports xAI's Grok API and OpenRouter through the shared structured-output client. Every response is validated against the same Pydantic schema used by the agents. Per-agent hosted model IDs can be configured without editing agent code.
+### Deployment safety checklist
 
-See [docs/LLM_PROVIDERS.md](docs/LLM_PROVIDERS.md) for setup. Keep API keys in the backend's local `.env` or hosting secrets; never put them in frontend/Vite variables or commit them. Hosted API calls can incur costs. The repository CI uses mocked API responses and does not need provider credentials; run a small live smoke test only after configuring a key and verifying the selected model is available.
+The authenticated workspace is present on `main` and the frontend deploys from that branch. Before relying on multi-user production data, verify that the backend has a server-only `AUTH_BOOTSTRAP_TOKEN`, `AUTH_COOKIE_SECURE=true`, and durable database/storage configured. Back up and migrate existing SQLite data before changing persistence settings. Never commit secrets. The GitHub workflow runs backend export/security regression checks and a frontend production build; a green frontend deployment alone does not prove the live backend has all required environment variables.
 
-## Refinement branch: GenAI, testing, documents, and accounts
-
-The public pull request linked below contains the current integrated feature set, built on the existing React/Vite and FastAPI project rather than rewriting it.
-
-- **GenAI runtime:** Ollama remains the default, with configurable xAI Grok and OpenRouter adapters; see `docs/LLM_PROVIDERS.md`.
-- **Orchestration:** the current four agents run through LangGraph with the existing stage callbacks and artifact names preserved.
-- **Blueprint Quality Lab:** checks requirement traceability, missing coverage, invalid requirement references, open questions, and technical-review findings. It does not execute generated application code.
-- **Project Copilot:** project-scoped answers grounded in saved artifacts and context, with proposed changes presented for approval.
-- **Testing workspace:** creates requirement-linked proposed test cases and records execution outcomes separately. Proposed tests do not count as executed tests.
-- **Engineering exports:** SRS, SDD, Test Report, and traceability matrix downloads.
-- **Code Studio:** reviewable FastAPI + React/Vite source bundle generation and ZIP export; generated code is not run inside the Specra API process.
-- **Accounts:** a one-time administrator bootstrap, login/logout, account management, and role-based project membership.
-- **Public signup:** after the initial admin is initialized, the login screen offers `New to Specra? Create an account`. Self-registered accounts start as `viewer` and receive no project membership until assigned by an administrator/project owner. Set `ALLOW_PUBLIC_SIGNUP=false` to disable registration.
-
-### Public deployment warning
-
-These changes are on a review branch and are not live on the deployed website yet. Before merging/deploying the authenticated workspace, configure a server-only `AUTH_BOOTSTRAP_TOKEN`, set `AUTH_COOKIE_SECURE=true`, and use durable storage/managed database for existing project records. Render is configured for automatic deployment from `main`, so do not merge this feature set before backing up current project data and completing those settings.
-
-Public registration is not email-verified in this iteration; newly created accounts have no access to private project records unless explicitly assigned to a project.
+Self-registration is not email-verified in this iteration. Viewer accounts cannot read private projects unless explicitly assigned to a project.
