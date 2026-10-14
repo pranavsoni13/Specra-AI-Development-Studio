@@ -72,7 +72,7 @@ class LLMProviderClientTests(unittest.TestCase):
                 "LLM_BASE_URL": "",
             },
             clear=False,
-        ), patch("openai.OpenAI") as openai_factory:
+        ), patch("app.core.llm.client.OpenAI") as openai_factory:
             openai_factory.return_value.chat.completions.create.return_value = (
                 fake_response('{"message":"from xai"}')
             )
@@ -101,7 +101,7 @@ class LLMProviderClientTests(unittest.TestCase):
                 "LLM_BASE_URL": "",
             },
             clear=False,
-        ), patch("openai.OpenAI") as openai_factory:
+        ), patch("app.core.llm.client.OpenAI") as openai_factory:
             openai_factory.return_value.chat.completions.create.return_value = (
                 fake_response('{"message":"from router"}')
             )
@@ -122,7 +122,7 @@ class LLMProviderClientTests(unittest.TestCase):
             "https://openrouter.ai/api/v1",
         )
         self.assertEqual(
-            options["default_headers"]["X-Title"],
+            options["default_headers"]["X-OpenRouter-Title"],
             "Specra AI Development Studio",
         )
 
@@ -136,7 +136,7 @@ class LLMProviderClientTests(unittest.TestCase):
             },
             clear=False,
         ):
-            with self.assertRaisesRegex(RuntimeError, "XAI_API_KEY"):
+            with self.assertRaisesRegex(ValueError, "XAI_API_KEY"):
                 LocalLLMClient(debug=False)
 
 
