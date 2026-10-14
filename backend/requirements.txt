@@ -9,3 +9,5 @@ langgraph
 sentence-transformers
 chromadb
 email-validator
+reportlab
+python-pptx
