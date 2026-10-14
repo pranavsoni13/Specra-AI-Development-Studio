@@ -413,10 +413,14 @@ export default function AuthGate({ children }) {
 
   const showBootstrap = setup.needs_bootstrap && setup.bootstrap_configured;
   const bootstrapBlocked = setup.needs_bootstrap && !setup.bootstrap_configured;
-  const showRegistration = !setup.needs_bootstrap && setup.public_signup_enabled === true;
+  // Keep the account-creation entry point visible after bootstrap. If public
+  // registration is disabled by the backend, explain why instead of silently
+  // making the option disappear from the signed-out screen.
+  const workspaceInitialized = !setup.needs_bootstrap;
+  const registrationEnabled = setup.public_signup_enabled === true;
   const activeMode = showBootstrap && mode === "bootstrap"
     ? "bootstrap"
-    : showRegistration && mode === "register"
+    : workspaceInitialized && registrationEnabled && mode === "register"
       ? "register"
       : "login";
 
@@ -518,18 +522,25 @@ export default function AuthGate({ children }) {
           </button>
         )}
 
-        {showRegistration && (
-          <button
-            className="auth-mode-switch"
-            type="button"
-            onClick={() => {
-              setError("");
-              setNotice("");
-              setMode((value) => value === "register" ? "login" : "register");
-            }}
-          >
-            {activeMode === "register" ? "Already have an account? Sign in" : "New to Specra? Create an account"}
-          </button>
+        {workspaceInitialized && (
+          registrationEnabled ? (
+            <button
+              className="auth-mode-switch"
+              type="button"
+              onClick={() => {
+                setError("");
+                setNotice("");
+                setMode((value) => value === "register" ? "login" : "register");
+              }}
+            >
+              {activeMode === "register" ? "Already have an account? Sign in" : "New to Specra? Create an account"}
+            </button>
+          ) : (
+            <p className="auth-security-note" role="status">
+              Public sign-up is disabled for this workspace. Ask the administrator to enable
+              <code> ALLOW_PUBLIC_SIGNUP=true </code> or create your account from Manage accounts.
+            </p>
+          )
         )}
 
         <div className="auth-security-note">
