@@ -86,6 +86,7 @@ function App() {
     useState("");
 
   const [error, setError] = useState("");
+  const [refinementError, setRefinementError] = useState("");
 
   const [showJson, setShowJson] =
     useState(false);
@@ -937,10 +938,7 @@ function App() {
       refinementInstruction.trim();
 
     if (!instruction) {
-      setError(
-        "Write what you want changed first."
-      );
-
+      setRefinementError("Write what you want changed first.");
       return;
     }
 
@@ -975,6 +973,7 @@ function App() {
 
     setRefining(true);
     setError("");
+    setRefinementError("");
     setShowJson(false);
 
     try {
@@ -1046,12 +1045,11 @@ function App() {
           : `${agent?.label || "Artifact"} regenerated.`
       );
     } catch (err) {
-      setError(
+      setRefinementError(
         err instanceof Error
           ? err.message
           : "Refinement failed."
       );
-
       setStatusMessage("");
     } finally {
       setRefining(false);
@@ -1305,6 +1303,7 @@ function App() {
     );
 
     setError("");
+    setRefinementError("");
     setShowJson(false);
     setShowVersions(false);
   }
@@ -1319,6 +1318,7 @@ function App() {
     );
 
     setError("");
+    setRefinementError("");
   }
 
   function closeRefinement() {
@@ -1329,6 +1329,7 @@ function App() {
     setRefinementInstruction(
       ""
     );
+    setRefinementError("");
   }
 
   function openVersionPanel(
@@ -3031,15 +3032,10 @@ function App() {
                 </div>
               )}
 
-              {error && (
-                <div className="error-box">
-                  <div className="error-title">
-                    Operation error
-                  </div>
-
-                  <div className="error-message">
-                    {error}
-                  </div>
+              {error && !project && (
+                <div className="error-box" role="alert">
+                  <div className="error-title">Operation error</div>
+                  <div className="error-message">{error}</div>
                 </div>
               )}
             </div>
@@ -3156,6 +3152,13 @@ function App() {
               </div>
             </div>
 
+            {error && (
+              <div className="error-box workspace-action-alert" role="alert">
+                <div className="error-title">Action could not be completed</div>
+                <div className="error-message">{error}</div>
+              </div>
+            )}
+
             {showMemory && project?.project_id && (
               <ProjectMemoryPanel
                 apiBase={API_BASE}
@@ -3204,6 +3207,12 @@ function App() {
             {refinementMode ===
               "global" && (
               <div className="global-refinement">
+                {refinementError && (
+                  <div className="error-box refinement-inline-error" role="alert">
+                    <div className="error-title">Action not permitted</div>
+                    <div className="error-message">{refinementError}</div>
+                  </div>
+                )}
                 <div>
                   <div className="refinement-kicker">
                     GLOBAL PROJECT INSTRUCTION
@@ -3565,6 +3574,12 @@ function App() {
                   refinementMode ===
                     activeArtifact && (
                     <div className="agent-refinement-box">
+                      {refinementError && (
+                        <div className="error-box refinement-inline-error" role="alert">
+                          <div className="error-title">Action not permitted</div>
+                          <div className="error-message">{refinementError}</div>
+                        </div>
+                      )}
                       <div className="refinement-kicker">
                         AI REFINEMENT
                       </div>
