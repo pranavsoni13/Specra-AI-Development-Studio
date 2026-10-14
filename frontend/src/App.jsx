@@ -2244,21 +2244,15 @@ function App({ currentUser }) {
                   </span>
                 </button>
 
-                <button
-                  className="version-restore"
-                  disabled={
-                    refining ||
-                    loading
-                  }
-                  onClick={() =>
-                    restoreVersion(
-                      stage,
-                      version.version_number
-                    )
-                  }
-                >
-                  Restore
-                </button>
+                {!isViewer && (
+                  <button
+                    className="version-restore"
+                    disabled={refining || loading}
+                    onClick={() => restoreVersion(stage, version.version_number)}
+                  >
+                    Restore
+                  </button>
+                )}
               </div>
             )
           )}
@@ -3140,15 +3134,10 @@ function App({ currentUser }) {
                 </div>
               )}
 
-              {error && (
-                <div className="error-box">
-                  <div className="error-title">
-                    Operation error
-                  </div>
-
-                  <div className="error-message">
-                    {error}
-                  </div>
+              {error && !project && (
+                <div className="error-box" role="alert">
+                  <div className="error-title">Operation error</div>
+                  <div className="error-message">{error}</div>
                 </div>
               )}
             </div>
@@ -3265,6 +3254,13 @@ function App({ currentUser }) {
                 )}
               </div>
             </div>
+
+            {error && (
+              <div className="error-box workspace-action-alert" role="alert">
+                <div className="error-title">Action could not be completed</div>
+                <div className="error-message">{error}</div>
+              </div>
+            )}
 
             {showMemory && project?.project_id && (
               <ProjectMemoryPanel
