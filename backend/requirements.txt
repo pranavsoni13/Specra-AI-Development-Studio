@@ -9,3 +9,5 @@ sentence-transformers
 chromadb
 email-validator
 openai
+reportlab
+python-pptx
