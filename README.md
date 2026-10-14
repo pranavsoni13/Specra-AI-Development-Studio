@@ -180,6 +180,6 @@ The feature pull request adds the capabilities below on top of the existing prov
 
 ### Deployment safety checklist
 
-These changes are reviewed on a branch and are not part of the live deployment yet. Render is configured to auto-deploy from `main`. Before merging the authenticated workspace, set a server-only `AUTH_BOOTSTRAP_TOKEN`, set `AUTH_COOKIE_SECURE=true`, and back up/migrate existing SQLite project data to durable storage. Do not merge/deploy until these requirements are satisfied.
+The authenticated workspace is present on `main` and the frontend deploys from that branch. Before relying on multi-user production data, verify that the backend has a server-only `AUTH_BOOTSTRAP_TOKEN`, `AUTH_COOKIE_SECURE=true`, and durable database/storage configured. Back up and migrate existing SQLite data before changing persistence settings. Never commit secrets. The GitHub workflow runs backend export/security regression checks and a frontend production build; a green frontend deployment alone does not prove the live backend has all required environment variables.
 
 Self-registration is not email-verified in this iteration. Viewer accounts cannot read private projects unless explicitly assigned to a project.
