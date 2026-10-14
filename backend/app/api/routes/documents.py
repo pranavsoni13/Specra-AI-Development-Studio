@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.core.document_export import (
+    render_document_export,
     render_sdd,
     render_srs,
     render_test_report,
@@ -23,7 +24,11 @@ router = APIRouter(
     "/{document_type}",
     dependencies=[Depends(require_project_roles())],
 )
-def download_document(project_id: str, document_type: str) -> Response:
+def download_document(
+    project_id: str,
+    document_type: str,
+    format: str = Query(default="pdf", pattern="^(md|markdown|pdf|ppt|pptx|powerpoint)$"),
+) -> Response:
     project = project_store.get_project(project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
@@ -39,29 +44,36 @@ def download_document(project_id: str, document_type: str) -> Response:
     )
 
     if document_type == "srs":
-        body = render_srs(project, artifacts, versions)
-        filename = safe_filename(project_name, project_id, "srs.md")
-        media_type = "text/markdown; charset=utf-8"
+        markdown = render_srs(project, artifacts, versions)
+        base_suffix = "srs"
     elif document_type == "sdd":
-        body = render_sdd(project, artifacts, versions)
-        filename = safe_filename(project_name, project_id, "sdd.md")
-        media_type = "text/markdown; charset=utf-8"
+        markdown = render_sdd(project, artifacts, versions)
+        base_suffix = "sdd"
     elif document_type in {"test-report", "test_report"}:
-        body = render_test_report(project, suite)
-        filename = safe_filename(project_name, project_id, "test-report.md")
-        media_type = "text/markdown; charset=utf-8"
+        markdown = render_test_report(project, suite)
+        base_suffix = "test-report"
     elif document_type in {"traceability", "traceability.csv"}:
-        body = render_traceability_csv(project, artifacts, suite)
+        body = render_traceability_csv(project, artifacts, suite).encode("utf-8")
         filename = safe_filename(project_name, project_id, "traceability.csv")
-        media_type = "text/csv; charset=utf-8"
+        return Response(
+            content=body,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     else:
         raise HTTPException(
             status_code=404,
             detail="Unknown document type. Use srs, sdd, test-report, or traceability.",
         )
 
+    try:
+        body, extension, media_type = render_document_export(markdown, format)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    filename = safe_filename(project_name, project_id, f"{base_suffix}.{extension}")
+
     return Response(
-        content=body.encode("utf-8"),
+        content=body,
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
