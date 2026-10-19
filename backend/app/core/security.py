@@ -16,6 +16,7 @@ from typing import Callable
 from fastapi import Depends, HTTPException, Request, status
 
 from app.core.storage.project_store import DEFAULT_DB_PATH
+from app.core.database import persistent_storage_ready
 from app.core.database import connect_database
 
 
@@ -550,6 +551,14 @@ auth_store = AuthStore()
 
 
 def get_current_user(request: Request) -> dict:
+    if not persistent_storage_ready():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Specra is paused until durable storage is configured. "
+                "Set DATABASE_URL in the backend environment before using authenticated endpoints."
+            ),
+        )
     token = request.cookies.get(AUTH_COOKIE_NAME)
     user = auth_store.get_session_user(token)
     if user is None:
