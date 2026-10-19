@@ -55,6 +55,26 @@ class CodeGenerationAgentTests(unittest.TestCase):
             summary="Search books and manage a personal reading list.",
             files=[
                 GeneratedFileDraft(
+                    path="backend/app/main.py",
+                    purpose="Application entry point with registered project routes",
+                    content=(
+                        "from fastapi import FastAPI\n"
+                        "from app.routes import catalogue\n"
+                        "app = FastAPI()\n"
+                        "app.include_router(catalogue.router)\n"
+                        "@app.get('/health')\n"
+                        "def health(): return {'status': 'healthy'}\n"
+                    ),
+                ),
+                GeneratedFileDraft(
+                    path="frontend/src/App.jsx",
+                    purpose="Main user workflow for book search",
+                    content=(
+                        "import BookSearch from './features/BookSearch.jsx';\n"
+                        "export default function App() { return <BookSearch />; }\n"
+                    ),
+                ),
+                GeneratedFileDraft(
                     path="backend/app/routes/catalogue.py",
                     purpose="Catalogue search endpoint",
                     content=(
