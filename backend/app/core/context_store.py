@@ -7,6 +7,8 @@ from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 
+from app.core.database import connect_database
+
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 CONTEXT_DB_PATH = BASE_DIR / "context.db"
@@ -31,7 +33,7 @@ class ProjectContextStore:
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(
+        connection = connect_database(
             self.db_path,
             check_same_thread=False,
         )
