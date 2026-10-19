@@ -7,6 +7,12 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 
+from app.core.database import (
+    persistent_storage_configured,
+    persistent_storage_ready,
+    persistent_storage_required,
+)
+
 from app.core.security import (
     AUTH_COOKIE_NAME,
     SESSION_HOURS,
@@ -61,6 +67,18 @@ class UserUpdateRequest(BaseModel):
     is_active: bool | None = None
 
 
+def _ensure_persistent_storage() -> None:
+    if not persistent_storage_ready():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Specra is paused until durable storage is configured. "
+                "Set DATABASE_URL to a PostgreSQL connection string in the backend environment, "
+                "then redeploy. This prevents accounts and projects from disappearing on restart."
+            ),
+        )
+
+
 def _public_signup_enabled() -> bool:
     value = os.getenv("ALLOW_PUBLIC_SIGNUP", "true").strip().casefold()
     return value not in {"0", "false", "no", "off"}
@@ -105,6 +123,8 @@ def get_setup_status() -> dict:
         "public_signup_enabled": (
             not needs_bootstrap and _public_signup_enabled()
         ),
+        "persistent_storage_required": persistent_storage_required(),
+        "persistent_storage_configured": persistent_storage_configured(),
     }
 
 
@@ -113,6 +133,7 @@ def bootstrap_admin(
     request: BootstrapRequest,
     response: Response,
 ) -> dict:
+    _ensure_persistent_storage()
     expected_token = os.getenv("AUTH_BOOTSTRAP_TOKEN", "").strip()
     if not expected_token:
         raise HTTPException(
@@ -154,6 +175,7 @@ def register(
     request: RegisterRequest,
     http_request: Request,
 ) -> dict:
+    _ensure_persistent_storage()
     if not _public_signup_enabled():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -205,6 +227,7 @@ def login(
     response: Response,
     http_request: Request,
 ) -> dict:
+    _ensure_persistent_storage()
     client_host = http_request.client.host if http_request.client else None
     identity = auth_store.login_identity(str(request.email), client_host)
 
