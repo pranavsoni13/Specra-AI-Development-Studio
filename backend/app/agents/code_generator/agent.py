@@ -86,32 +86,73 @@ class CodeGenerationAgent:
             user_prompt=prompt,
             output_schema=CodeBundleDraft,
         )
-        # Do not silently label a generic health-check scaffold as generated
-        # application code. Require real backend and frontend feature modules first.
-        source_paths = {
-            PurePosixPath(item.path.strip()).as_posix().casefold()
+        # Require an integrated application, not just loose files or a validation report.
+        source_by_path = {
+            PurePosixPath(item.path.strip()).as_posix().casefold(): item
             for item in draft.files
         }
-        backend_features = {
-            path for path in source_paths
-            if path.startswith("backend/app/")
-            and path not in {"backend/app/main.py", "backend/app/__init__.py"}
-        }
-        frontend_features = {
-            path for path in source_paths
-            if path.startswith("frontend/src/")
-            and path not in {
-                "frontend/src/app.jsx",
-                "frontend/src/main.jsx",
-                "frontend/src/styles.css",
-            }
-        }
-        if not backend_features or not frontend_features:
+        router_paths = [
+            path for path in source_by_path
+            if path.endswith(".py")
+            and (
+                path.startswith("backend/app/routes/")
+                or path.startswith("backend/app/api/routes/")
+            )
+            and not path.endswith("/__init__.py")
+        ]
+        ui_component_paths = [
+            path for path in source_by_path
+            if path.endswith((".jsx", ".tsx", ".js", ".ts"))
+            and (
+                path.startswith("frontend/src/components/")
+                or path.startswith("frontend/src/features/")
+            )
+        ]
+        main_entry = source_by_path.get("backend/app/main.py")
+        app_entry = source_by_path.get("frontend/src/app.jsx")
+
+        wired_router = False
+        main_source = main_entry.content if main_entry else ""
+        for path in router_paths:
+            module_name = PurePosixPath(path).stem.casefold()
+            router_source = source_by_path[path].content
+            if (
+                "@router." in router_source
+                and "include_router" in main_source
+                and module_name in main_source.casefold()
+            ):
+                wired_router = True
+                break
+
+        wired_component = False
+        app_source = app_entry.content if app_entry else ""
+        for path in ui_component_paths:
+            component_name = PurePosixPath(path).stem
+            component_source = source_by_path[path].content
+            if (
+                len(component_source.strip()) >= 80
+                and "export" in component_source
+                and component_name.casefold() in app_source.casefold()
+            ):
+                wired_component = True
+                break
+
+        if not wired_router or not wired_component:
+            missing_parts = []
+            if not wired_router:
+                missing_parts.append(
+                    "a backend router imported and registered from backend/app/main.py"
+                )
+            if not wired_component:
+                missing_parts.append(
+                    "a project-specific React component imported and rendered from frontend/src/App.jsx"
+                )
             raise ValueError(
-                "The model returned a generic starter instead of project-specific application code. "
-                "No bundle was saved. Check the configured code-generation model and output limits, "
-                "then retry. The generator must return at least one backend feature module and one "
-                "frontend feature module."
+                "The model did not return a complete, integrated application. "
+                "No code bundle was saved. Missing: "
+                + "; ".join(missing_parts)
+                + ". Retry generation; if this keeps happening, configure a code-generation model "
+                "with enough output capacity. Specra will not report a generic scaffold as generated code."
             )
 
         # The active project name wins over any model-invented naming.
