@@ -5,6 +5,8 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+from app.core.database import connect_database
+
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 DATA_DIR = BASE_DIR / "data"
@@ -58,8 +60,8 @@ class ProjectStore:
     # ---------------------------------------------------------
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(
-            str(self.db_path),
+        connection = connect_database(
+            self.db_path,
             timeout=30,
         )
 
