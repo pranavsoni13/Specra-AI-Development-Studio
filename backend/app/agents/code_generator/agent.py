@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import PurePosixPath
 from typing import Any
 
 from app.agents.code_generator.prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
@@ -24,9 +26,19 @@ def _bounded_json(value: Any, limit: int = 9000) -> str:
 class CodeGenerationAgent:
     """Generate a VS Code starter bundle without executing model-produced files."""
 
-    def __init__(self, model_name: str = SOFTWARE_ARCHITECT_MODEL):
-        self.model_name = model_name
-        self.client = LocalLLMClient(model_name=model_name)
+    def __init__(self, model_name: str | None = None):
+        # Source generation needs more output tokens than blueprint/review tasks.
+        # A dedicated model is optional; by default use Specra's architect model.
+        self.model_name = (
+            (model_name or os.getenv("CODE_GENERATION_MODEL", "")).strip()
+            or SOFTWARE_ARCHITECT_MODEL
+        )
+        self.client = LocalLLMClient(
+            model_name=self.model_name,
+            num_predict=12000,
+            keep_alive="30m",
+            debug=False,
+        )
         self.quality_controller = CodeGenerationQualityController()
 
     def generate(
@@ -74,6 +86,34 @@ class CodeGenerationAgent:
             user_prompt=prompt,
             output_schema=CodeBundleDraft,
         )
+        # Do not silently label a generic health-check scaffold as generated
+        # application code. Require real backend and frontend feature modules first.
+        source_paths = {
+            PurePosixPath(item.path.strip()).as_posix().casefold()
+            for item in draft.files
+        }
+        backend_features = {
+            path for path in source_paths
+            if path.startswith("backend/app/")
+            and path not in {"backend/app/main.py", "backend/app/__init__.py"}
+        }
+        frontend_features = {
+            path for path in source_paths
+            if path.startswith("frontend/src/")
+            and path not in {
+                "frontend/src/app.jsx",
+                "frontend/src/main.jsx",
+                "frontend/src/styles.css",
+            }
+        }
+        if not backend_features or not frontend_features:
+            raise ValueError(
+                "The model returned a generic starter instead of project-specific application code. "
+                "No bundle was saved. Check the configured code-generation model and output limits, "
+                "then retry. The generator must return at least one backend feature module and one "
+                "frontend feature module."
+            )
+
         # The active project name wins over any model-invented naming.
         if draft.project_name.strip() != project_name:
             draft = draft.model_copy(update={"project_name": project_name})
