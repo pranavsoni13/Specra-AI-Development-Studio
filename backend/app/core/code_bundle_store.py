@@ -9,6 +9,7 @@ from threading import RLock
 from uuid import uuid4
 
 from app.core.storage.project_store import DEFAULT_DB_PATH
+from app.core.database import connect_database
 
 
 def _now() -> str:
@@ -23,7 +24,7 @@ class CodeBundleStore:
         self._initialize_database()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(str(self.db_path), timeout=30)
+        connection = connect_database(self.db_path, timeout=30)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
