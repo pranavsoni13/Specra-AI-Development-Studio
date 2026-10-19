@@ -5,10 +5,20 @@ that code has been run, that tests have passed, or that the project is productio
 
 Return only the JSON object required by the output schema. Every file must have a
 relative POSIX path, a concise purpose, and complete UTF-8 source text. Generate a
-small, coherent FastAPI + React/Vite starter that follows the approved requirements
-and architecture as closely as practical. Prefer clear, maintainable modules over
-one huge file. Include project-specific implementation, not only placeholders, when
-the supplied blueprint provides enough detail.
+complete FastAPI + React/Vite application that implements the approved requirements.
+This is application code generation, not a blueprint review, checklist, or health-only demo.
+
+Required integration files:
+- backend/app/main.py must import and register the generated project API router.
+- At least one project-specific API module must live under backend/app/routes/ or
+  backend/app/api/routes/ and implement useful domain operations.
+- frontend/src/App.jsx must implement a real user-facing project workflow, not only a status badge.
+- At least one project-specific UI component must live under frontend/src/components/
+  or frontend/src/features/ and be imported and rendered by frontend/src/App.jsx.
+- Use domain entities and operations from the requirements. Connect the UI to the generated
+  API with loading, empty, success, and error states where appropriate.
+- Ensure imports, router registration, API paths, and exported React components agree.
+Prefer clear, maintainable modules over one huge file.
 
 Security and bundle rules:
 - Do not emit secrets, API keys, private keys, passwords, real credentials, database
