@@ -13,6 +13,8 @@ services:
         value: 3.11.11
       - key: AUTH_BOOTSTRAP_TOKEN
         sync: false
+      - key: DATABASE_URL
+        sync: false
       - key: ALLOW_PUBLIC_SIGNUP
         value: "true"
       - key: OLLAMA_HOST
