@@ -7,7 +7,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.core.database import _translate_sql, connect_database, using_postgres
+from app.core.database import (
+    _translate_sql,
+    connect_database,
+    persistent_storage_configured,
+    persistent_storage_ready,
+    persistent_storage_required,
+    using_postgres,
+)
 
 
 class DatabaseAdapterTests(unittest.TestCase):
@@ -23,6 +30,24 @@ class DatabaseAdapterTests(unittest.TestCase):
                 self.assertEqual(row[0], "local")
             finally:
                 connection.close()
+
+    def test_hosted_storage_required_blocks_auth_until_database_url_exists(self):
+        with patch.dict(os.environ, {"REQUIRE_PERSISTENT_DATABASE": "true", "DATABASE_URL": ""}):
+            self.assertTrue(persistent_storage_required())
+            self.assertFalse(persistent_storage_configured())
+            self.assertFalse(persistent_storage_ready())
+
+    def test_local_sqlite_fallback_remains_available_for_development(self):
+        with patch.dict(os.environ, {"REQUIRE_PERSISTENT_DATABASE": "false", "DATABASE_URL": ""}):
+            self.assertFalse(persistent_storage_required())
+            self.assertFalse(persistent_storage_configured())
+            self.assertTrue(persistent_storage_ready())
+
+    def test_hosted_postgres_url_unlocks_storage_guard(self):
+        with patch.dict(os.environ, {"REQUIRE_PERSISTENT_DATABASE": "true", "DATABASE_URL": "postgresql://user:password@host.example/db"}):
+            self.assertTrue(persistent_storage_required())
+            self.assertTrue(persistent_storage_configured())
+            self.assertTrue(persistent_storage_ready())
 
     def test_postgres_url_detection_does_not_connect_to_network(self):
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:password@host.example/db"}):
