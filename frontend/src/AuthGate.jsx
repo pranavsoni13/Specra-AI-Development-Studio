@@ -412,19 +412,22 @@ export default function AuthGate({ children }) {
     );
   }
 
-  const showBootstrap = setup.needs_bootstrap && setup.bootstrap_configured;
-  const bootstrapBlocked = setup.needs_bootstrap && !setup.bootstrap_configured;
+  const persistenceBlocked = setup.persistent_storage_required && !setup.persistent_storage_configured;
+  const showBootstrap = setup.needs_bootstrap && setup.bootstrap_configured && !persistenceBlocked;
+  const bootstrapBlocked = persistenceBlocked || (setup.needs_bootstrap && !setup.bootstrap_configured);
   // Keep the account-creation entry point visible after bootstrap. If public
   // registration is disabled by the backend, explain why instead of silently
   // making the option disappear from the signed-out screen.
   const workspaceInitialized = !setup.needs_bootstrap;
   // Older local backend instances may omit this field; the backend default is enabled.
-  const registrationEnabled = setup.public_signup_enabled !== false;
-  const activeMode = showBootstrap && mode === "bootstrap"
-    ? "bootstrap"
-    : workspaceInitialized && registrationEnabled && mode === "register"
-      ? "register"
-      : "login";
+  const registrationEnabled = setup.public_signup_enabled !== false && !persistenceBlocked;
+  const activeMode = persistenceBlocked
+    ? "storage-blocked"
+    : showBootstrap && mode === "bootstrap"
+      ? "bootstrap"
+      : workspaceInitialized && registrationEnabled && mode === "register"
+        ? "register"
+        : "login";
 
   return (
     <main className="auth-screen">
@@ -437,22 +440,31 @@ export default function AuthGate({ children }) {
           </div>
         </div>
 
-        <div className="auth-eyebrow">{activeMode === "bootstrap" ? "INITIAL SETUP" : activeMode === "register" ? "CREATE ACCOUNT" : "SECURE WORKSPACE"}</div>
-        <h1>{activeMode === "bootstrap" ? "Create the first admin" : activeMode === "register" ? "Create your account" : "Welcome back"}</h1>
+        <div className="auth-eyebrow">{activeMode === "storage-blocked" ? "SETUP PAUSED" : activeMode === "bootstrap" ? "INITIAL SETUP" : activeMode === "register" ? "CREATE ACCOUNT" : "SECURE WORKSPACE"}</div>
+        <h1>{activeMode === "storage-blocked" ? "Connect persistent storage" : activeMode === "bootstrap" ? "Create the first admin" : activeMode === "register" ? "Create your account" : "Welcome back"}</h1>
         <p className="auth-intro">
-          {activeMode === "bootstrap"
-            ? "Use the one-time setup token configured on the backend. The first account becomes the workspace administrator."
-            : activeMode === "register"
-              ? "Join Specra with a new account. New accounts start with Viewer access and need a project administrator to grant project access."
-              : "Sign in to your Specra workspace, or create an account if you are new here."}
+          {activeMode === "storage-blocked"
+            ? "Specra has paused account setup and sign-in to protect your data. The hosted PostgreSQL database is not configured yet. Set DATABASE_URL in the Render backend environment and redeploy; the setup token is not the problem."
+            : activeMode === "bootstrap"
+              ? "Use the one-time setup token configured on the backend. The first account becomes the workspace administrator."
+              : activeMode === "register"
+                ? "Join Specra with a new account. New accounts start with Viewer access and need a project administrator to grant project access."
+                : "Sign in to your Specra workspace, or create an account if you are new here."}
         </p>
 
-        {bootstrapBlocked && (
+        {persistenceBlocked && (
+          <div className="auth-notice" role="alert">
+            Hosted storage is missing. Configure <code>DATABASE_URL</code> in Render and redeploy before creating the first admin. Do not keep trying setup tokens.
+          </div>
+        )}
+
+        {bootstrapBlocked && !persistenceBlocked && (
           <div className="auth-notice">
             The initial admin has not been created. Set <code>AUTH_BOOTSTRAP_TOKEN</code> in the backend environment, then refresh this page to initialize the workspace.
           </div>
         )}
 
+        {!persistenceBlocked && (
         <form className="auth-login-form" onSubmit={submit}>
           {(activeMode === "bootstrap" || activeMode === "register") && (
             <>
@@ -506,8 +518,9 @@ export default function AuthGate({ children }) {
             {busy ? "Please wait…" : activeMode === "bootstrap" ? "Create administrator" : activeMode === "register" ? "Create account" : "Sign in"}
           </button>
         </form>
+        )}
 
-        {error && <p className="auth-error" role="alert">{error}</p>}
+        {error && <p className="auth-error" role="alert">{error}</p>
         {notice && <p className="auth-success" role="status">{notice}</p>}
 
         {showBootstrap && (
