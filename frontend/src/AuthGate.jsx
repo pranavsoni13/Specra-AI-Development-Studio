@@ -520,7 +520,7 @@ export default function AuthGate({ children }) {
         </form>
         )}
 
-        {error && <p className="auth-error" role="alert">{error}</p>
+        {error && <p className="auth-error" role="alert">{error}</p>}
         {notice && <p className="auth-success" role="status">{notice}</p>}
 
         {showBootstrap && (
