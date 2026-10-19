@@ -6,6 +6,9 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from unittest.mock import Mock, patch
+
+from app.agents.code_generator.agent import CodeGenerationAgent
 from app.agents.code_generator.quality import CodeGenerationQualityController
 from app.agents.code_generator.schemas import CodeBundleDraft, GeneratedFileDraft
 from app.core.code_bundle_store import CodeBundleStore
@@ -23,6 +26,96 @@ def draft(files, name="Book Finder"):
     )
 
 
+class CodeGenerationAgentTests(unittest.TestCase):
+    def setUp(self):
+        self.project = {
+            "project_id": "book-project",
+            "project_name": "Book Finder",
+            "idea": "Build a book-finder app with catalogue search and saved reading lists.",
+        }
+        self.artifacts = {
+            "requirements": {
+                "project_name": "Book Finder",
+                "functional_requirements": [
+                    {"requirement_id": "FR-001", "description": "Search the book catalogue."},
+                    {"requirement_id": "FR-002", "description": "Save books to a reading list."},
+                ],
+            },
+            "project_plan": {"milestones": [{"name": "Catalogue search", "tasks": []}]},
+            "architecture": {"architecture_style": "Layered", "components": ["catalogue API", "React UI"]},
+            "technical_review": {"overall_status": "PASS", "findings": []},
+        }
+
+    @patch("app.agents.code_generator.agent.LocalLLMClient")
+    def test_agent_uses_larger_generation_budget_and_returns_project_files(self, client_class):
+        client = Mock()
+        client_class.return_value = client
+        client.generate_structured.return_value = CodeBundleDraft(
+            project_name="Book Finder",
+            summary="Search books and manage a personal reading list.",
+            files=[
+                GeneratedFileDraft(
+                    path="backend/app/routes/catalogue.py",
+                    purpose="Catalogue search endpoint",
+                    content=(
+                        "from fastapi import APIRouter\n"
+                        "router = APIRouter()\n"
+                        "@router.get('/books')\n"
+                        "def search_books(q: str = ''):\n"
+                        "    return {'query': q, 'items': []}\n"
+                    ),
+                ),
+                GeneratedFileDraft(
+                    path="frontend/src/features/BookSearch.jsx",
+                    purpose="Book search and reading list UI",
+                    content=(
+                        "import { useState } from 'react';\n"
+                        "export default function BookSearch() {\n"
+                        "  const [query, setQuery] = useState('');\n"
+                        "  const [books, setBooks] = useState([]);\n"
+                        "  async function search() {\n"
+                        "    const response = await fetch('/api/books?q=' + encodeURIComponent(query));\n"
+                        "    setBooks(await response.json());\n"
+                        "  }\n"
+                        "  return <main><input value={query} onChange={e => setQuery(e.target.value)} />"
+                        "<button onClick={search}>Search books</button>{books.map(book => "
+                        "<article key={book.id}>{book.title}</article>)}</main>;\n"
+                        "}\n"
+                    ),
+                ),
+            ],
+            setup_notes=["Install backend and frontend dependencies."],
+            test_notes=["Add catalogue search tests."],
+        )
+
+        agent = CodeGenerationAgent()
+        bundle = agent.generate(project=self.project, artifacts=self.artifacts)
+        kwargs = client_class.call_args.kwargs
+        self.assertEqual(kwargs["num_predict"], 12000)
+        self.assertFalse(kwargs["debug"])
+        generated_paths = {item.path for item in bundle.files}
+        self.assertIn("backend/app/routes/catalogue.py", generated_paths)
+        self.assertIn("frontend/src/features/BookSearch.jsx", generated_paths)
+        self.assertIn("backend/app/main.py", generated_paths)
+        self.assertEqual(bundle.execution_status, "not_executed")
+
+    @patch("app.agents.code_generator.agent.LocalLLMClient")
+    def test_agent_rejects_generic_scaffold_without_project_feature_modules(self, client_class):
+        client = Mock()
+        client_class.return_value = client
+        client.generate_structured.return_value = CodeBundleDraft(
+            project_name="Book Finder",
+            summary="A generic starter with a health endpoint.",
+            files=[],
+            setup_notes=[],
+            test_notes=[],
+        )
+        agent = CodeGenerationAgent()
+        with self.assertRaisesRegex(ValueError, "generic starter instead of project-specific application code"):
+            agent.generate(project=self.project, artifacts=self.artifacts)
+        self.assertFalse(hasattr(agent, "saved_bundle"))
+
+    
 class CodeGenerationQualityTests(unittest.TestCase):
     def setUp(self):
         self.controller = CodeGenerationQualityController()
