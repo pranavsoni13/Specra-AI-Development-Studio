@@ -131,7 +131,7 @@ class CodeGenerationAgentTests(unittest.TestCase):
             test_notes=[],
         )
         agent = CodeGenerationAgent()
-        with self.assertRaisesRegex(ValueError, "generic starter instead of project-specific application code"):
+        with self.assertRaisesRegex(ValueError, "complete, integrated application"):
             agent.generate(project=self.project, artifacts=self.artifacts)
         self.assertFalse(hasattr(agent, "saved_bundle"))
 
