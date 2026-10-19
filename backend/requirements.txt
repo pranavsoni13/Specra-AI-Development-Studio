@@ -11,3 +11,4 @@ chromadb
 email-validator
 reportlab
 python-pptx
+psycopg2-binary
