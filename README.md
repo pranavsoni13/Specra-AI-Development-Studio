@@ -30,7 +30,7 @@ The frontend and backend are deployed separately. The health endpoint confirms b
 - **Backend:** Python, FastAPI, Uvicorn, Pydantic
 - **Agent/model runtime:** Ollama by default; optional xAI and OpenRouter adapters
 - **Workflow and retrieval:** LangGraph, ChromaDB, sentence-transformers
-- **Local persistence:** SQLite
+- **Persistence:** SQLite for local development; PostgreSQL via `DATABASE_URL` for hosted deployments
 
 ## LLM provider configuration
 
@@ -152,7 +152,7 @@ The frontend and backend are separate deployment concerns.
 
 - The Vite proxy in `frontend/vite.config.js` applies to local development, not to a production deployment.
 - The backend needs an inference endpoint reachable from the deployed service. Provider-specific variables belong in the backend environment, not in frontend source code.
-- The project currently uses SQLite for project/context storage and ChromaDB for optional retrieval. Ephemeral cloud filesystems can lose SQLite and generated vector-store files after restarts or redeployments. Use durable storage before relying on long-term hosted project data.
+- Local development uses SQLite. Hosted deployments should set `DATABASE_URL` to a durable PostgreSQL connection string; the backend keeps SQLite as a local fallback when that variable is absent. Render Free web services lose local SQLite files on restart, spin-down, and redeploy. Follow [docs/PERSISTENT_DATABASE.md](docs/PERSISTENT_DATABASE.md) before initializing the hosted admin. ChromaDB retrieval data is separate and can be rebuilt from source documents.
 - Do not commit `.env` files, API keys, local databases, model weights, vector database runtime files, virtual environments, or build output.
 
 ## License
@@ -164,7 +164,7 @@ This project is distributed under the MIT License. See [LICENSE](LICENSE).
 - **Project Memory** stores project-scoped notes, constraints, design decisions, references, and code excerpts using the project-context API.
 - The next **Run All Again** supplies up to eight saved sources (bounded to 12,000 characters) as secondary context to requirement analysis. The current brief and explicit constraints take precedence over conflicting saved context.
 - The browser remembers the last project, selected artifact, and scroll position. Browser storage cannot recover server-side records that have been lost.
-- Hosted SQLite and vector files need durable database/storage before relying on projects surviving backend restarts and redeploys.
+- Hosted account, session, project, test-suite, Copilot, context, and code-bundle records use the shared PostgreSQL database when `DATABASE_URL` is configured. Never assume the SQLite fallback is durable on ephemeral hosting.
 - Project-context vector indexing is opt-in with `ENABLE_PROJECT_CONTEXT_RAG=true`. It is disabled by default on low-memory hosting; saved text still works as context for the full workflow without a vector index.
 
 ## Integrated refinement: GenAI, testing, documents, and secure accounts
@@ -180,6 +180,6 @@ The feature pull request adds the capabilities below on top of the existing prov
 
 ### Deployment safety checklist
 
-The authenticated workspace is present on `main` and the frontend deploys from that branch. Before relying on multi-user production data, verify that the backend has a server-only `AUTH_BOOTSTRAP_TOKEN`, `AUTH_COOKIE_SECURE=true`, and durable database/storage configured. Back up and migrate existing SQLite data before changing persistence settings. Never commit secrets. The GitHub workflow runs backend export/security regression checks and a frontend production build; a green frontend deployment alone does not prove the live backend has all required environment variables.
+The authenticated workspace is present on `main` and the frontend deploys from that branch. For hosted multi-user data, set a durable PostgreSQL `DATABASE_URL` and `AUTH_COOKIE_SECURE=true` in the backend environment before initializing the first admin. `AUTH_BOOTSTRAP_TOKEN` is only for first-admin bootstrap and is not part of routine signup/login. Never commit database URLs, bootstrap tokens, or provider keys. A green frontend deployment alone does not prove live backend configuration.
 
 Self-registration is not email-verified in this iteration. Viewer accounts cannot read private projects unless explicitly assigned to a project.
