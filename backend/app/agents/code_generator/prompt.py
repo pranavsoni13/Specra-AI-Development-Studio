@@ -59,7 +59,9 @@ Additional user constraints:
 Implementation expectations:
 - Use the supplied requirements and architecture as the source of truth.
 - Organize backend source under backend/app and tests under backend/tests.
-- Organize frontend source under frontend/src; use React and Vite.
+- Put API routers under backend/app/routes/ or backend/app/api/routes/ and register them from backend/app/main.py.
+- Organize frontend source under frontend/src; put a project-specific component under frontend/src/components/ or frontend/src/features/ and import/render it from frontend/src/App.jsx.
+- Do not rely on Specra's generic scaffold to implement project features.
 - Use the actual API shape and data entities described in the blueprint.
 - Add error handling and basic input validation where appropriate.
 - Do not invent that tests were executed. The final bundle will be marked not_executed.
