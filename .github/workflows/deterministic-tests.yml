@@ -38,6 +38,9 @@ jobs:
       - name: Validate provider configuration and response parsing
         run: python -m pytest -q backend/test_llm_providers.py
 
+      - name: Validate persistent database adapter
+        run: python -m pytest -q backend/test_database_adapter.py
+
       - name: Validate LangGraph orchestration
         run: python -m pytest -q backend/test_workflow_graph.py
 
