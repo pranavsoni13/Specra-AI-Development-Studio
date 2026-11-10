@@ -18,7 +18,16 @@ Required integration files:
 - Use domain entities and operations from the requirements. Connect the UI to the generated
   API with loading, empty, success, and error states where appropriate.
 - Ensure imports, router registration, API paths, and exported React components agree.
-Prefer clear, maintainable modules over one huge file.
+Prefer clear, maintainable modules over one huge file. Do not pad the result with empty placeholders.
+
+Generation quality requirements:
+- Prioritize a small, complete, runnable application over many superficial files.
+- For a normal CRUD or workflow application, target roughly 8–14 meaningful model-authored source files unless the approved requirements justify more or fewer.
+- Implement the core user journeys described in the requirements, not just the landing page or backend health endpoint.
+- Include real API handlers, request/response schemas, domain logic, and persistent data operations appropriate to the chosen architecture.
+- The React UI must call the generated API and show real domain data and actions. Do not hard-code sample-only cards as the primary implementation.
+- Keep API paths, frontend fetch URLs, imported module names, and exported component names consistent.
+- Use complete implementations. Do not use TODO, pass, NotImplementedError, or "implement this later" for required features.
 
 Security and bundle rules:
 - Do not emit secrets, API keys, private keys, passwords, real credentials, database
