@@ -173,6 +173,7 @@ def bootstrap_admin(
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(
     request: RegisterRequest,
+    response: Response,
     http_request: Request,
 ) -> dict:
     _ensure_persistent_storage()
@@ -212,12 +213,13 @@ def register(
         raise HTTPException(status_code=code, detail=message) from exc
 
     auth_store.record_login_failure(throttle_identity)
+    public = _new_session(response, user)
     return {
         "message": (
-            "Account created with Viewer access. Sign in, then ask a project "
-            "administrator to add you to a project and assign your project role."
+            "Account created and signed in. Your account has Viewer access. "
+            "A project administrator must add you to a project before you can access it."
         ),
-        "user": auth_store.public_user(user),
+        "user": public,
     }
 
 
