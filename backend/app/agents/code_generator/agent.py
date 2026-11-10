@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -7,7 +8,7 @@ from app.agents.code_generator.prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 from app.agents.code_generator.quality import CodeGenerationQualityController
 from app.agents.code_generator.schemas import CodeBundle, CodeBundleDraft
 from app.core.llm.client import LocalLLMClient
-from app.core.model_config import SOFTWARE_ARCHITECT_MODEL
+from app.core.model_config import CODE_GENERATION_MODEL
 
 
 def _dict(value: Any) -> dict:
@@ -17,25 +18,81 @@ def _dict(value: Any) -> dict:
 
 
 def _bounded_json(value: Any, limit: int = 9000) -> str:
-    text = json.dumps(value, ensure_ascii=False, default=str)
-    if len(text) > limit:
-        return text[:limit] + "…[truncated to fit code-generation context]"
-    return text
+    """Return valid compact JSON; never cut a serialized object mid-brace."""
+    def compact(node: Any, *, string_limit: int, list_limit: int, depth: int = 0):
+        if isinstance(node, str):
+            return node if len(node) <= string_limit else node[:string_limit] + " …[text shortened]"
+        if isinstance(node, dict):
+            if depth >= 8:
+                return {"_specra_note": "nested context shortened"}
+            return {
+                str(key): compact(
+                    item,
+                    string_limit=string_limit,
+                    list_limit=list_limit,
+                    depth=depth + 1,
+                )
+                for key, item in list(node.items())[:64]
+            }
+        if isinstance(node, (list, tuple)):
+            if depth >= 8:
+                return []
+            return [
+                compact(
+                    item,
+                    string_limit=string_limit,
+                    list_limit=list_limit,
+                    depth=depth + 1,
+                )
+                for item in list(node)[:list_limit]
+            ]
+        if node is None or isinstance(node, (bool, int, float)):
+            return node
+        return str(node)[:string_limit]
+
+    for string_limit, list_limit in (
+        (2400, 16),
+        (1600, 12),
+        (1000, 8),
+        (600, 6),
+        (350, 4),
+        (180, 2),
+        (80, 1),
+    ):
+        serialized = json.dumps(
+            compact(value, string_limit=string_limit, list_limit=list_limit),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
+        if len(serialized) <= limit:
+            return serialized
+
+    original = json.dumps(value, ensure_ascii=False, default=str)
+    return json.dumps(
+        {
+            "_specra_context_truncated": True,
+            "original_characters": len(original),
+            "summary": original[: max(16, limit - 100)],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
 class CodeGenerationAgent:
     """Generate a VS Code starter bundle without executing model-produced files."""
 
     def __init__(self, model_name: str | None = None):
-        # Source generation needs more output tokens than blueprint/review tasks.
-        # A dedicated model is optional; by default use Specra's architect model.
+        # Use a dedicated coding model and a larger output budget; blueprint
+        # models often return short explanations instead of complete source trees.
         self.model_name = (
             (model_name or os.getenv("CODE_GENERATION_MODEL", "")).strip()
-            or SOFTWARE_ARCHITECT_MODEL
+            or CODE_GENERATION_MODEL
         )
         self.client = LocalLLMClient(
             model_name=self.model_name,
-            num_predict=12000,
+            num_predict=20000,
             keep_alive="30m",
             debug=False,
         )
@@ -116,8 +173,17 @@ class CodeGenerationAgent:
         for path in router_paths:
             module_name = PurePosixPath(path).stem.casefold()
             router_source = source_by_path[path].content
+            has_api_router = "APIRouter" in router_source
+            has_http_route = bool(
+                re.search(
+                    r"@\w+\.(?:get|post|put|patch|delete)\s*\(",
+                    router_source,
+                    re.IGNORECASE,
+                )
+            )
             if (
-                "@router." in router_source
+                has_api_router
+                and has_http_route
                 and "include_router" in main_source
                 and module_name in main_source.casefold()
             ):
