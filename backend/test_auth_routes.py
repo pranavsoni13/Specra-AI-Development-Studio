@@ -176,27 +176,26 @@ class AuthRouteTests(unittest.TestCase):
         setup_status = self.client.get("/api/v1/auth/setup-status")
         self.assertTrue(setup_status.json()["public_signup_enabled"])
 
-        registered = self.client.post(
-            "/api/v1/auth/register",
-            json={
-                "email": "new-viewer@example.com",
-                "display_name": "New Viewer",
-                "password": "new-viewer-password-long",
-            },
-        )
+        # A normal signup must not need the one-time admin bootstrap secret.
+        with patch.dict(os.environ, {"AUTH_BOOTSTRAP_TOKEN": ""}, clear=False):
+            registered = self.client.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": "new-viewer@example.com",
+                    "display_name": "New Viewer",
+                    "password": "new-viewer-password-long",
+                },
+            )
         self.assertEqual(registered.status_code, 201, registered.text)
         self.assertEqual(registered.json()["user"]["role"], "viewer")
-        self.assertIn("project administrator", registered.json()["message"])
+        self.assertIn("signed in", registered.json()["message"].casefold())
+        self.assertIn("specra_session=", registered.headers.get("set-cookie", ""))
 
-        login = self.client.post(
-            "/api/v1/auth/login",
-            json={
-                "email": "new-viewer@example.com",
-                "password": "new-viewer-password-long",
-            },
-        )
-        self.assertEqual(login.status_code, 200, login.text)
-        self.assertEqual(self.client.get("/api/v1/auth/me").json()["user"]["role"], "viewer")
+        # The account is already authenticated; it must not have to submit the
+        # bootstrap token or perform a second login request.
+        current = self.client.get("/api/v1/auth/me")
+        self.assertEqual(current.status_code, 200, current.text)
+        self.assertEqual(current.json()["user"]["role"], "viewer")
         self.assertEqual(self.client.get("/api/v1/projects").json(), [])
         self.assertEqual(
             self.client.get(f"/api/v1/projects/{project_id}").status_code,
