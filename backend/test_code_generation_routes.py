@@ -124,22 +124,69 @@ class CodeGenerationRoutesTests(unittest.TestCase):
     def fake_bundle(**kwargs):
         return CodeBundle(
             project_name="Book Finder",
-            summary="A starter frontend and API for searching books.",
+            summary="A real book catalogue search and reading-list application.",
             stack="fastapi-react",
             files=[
                 CodeFile(
                     path="backend/app/main.py",
-                    purpose="API entry point",
-                    content='from fastapi import FastAPI\napp = FastAPI()\n',
+                    purpose="FastAPI entry point with the catalogue API registered",
+                    content=(
+                        "from fastapi import FastAPI\n"
+                        "from app.routes.catalogue import router as catalogue_router\n"
+                        "app = FastAPI(title='Book Finder')\n"
+                        "app.include_router(catalogue_router, prefix='/api')\n"
+                        "@app.get('/health')\n"
+                        "def health(): return {'status': 'healthy'}\n"
+                    ),
+                ),
+                CodeFile(
+                    path="backend/app/routes/catalogue.py",
+                    purpose="Search books and save them to a reader's list",
+                    content=(
+                        "from fastapi import APIRouter\n"
+                        "router = APIRouter()\n"
+                        "BOOKS = [{'id': 1, 'title': 'Dune'}]\n"
+                        "@router.get('/books')\n"
+                        "def search_books(q: str = ''):\n"
+                        "    return [book for book in BOOKS if q.casefold() in book['title'].casefold()]\n"
+                        "@router.post('/reading-list/{book_id}')\n"
+                        "def save_book(book_id: int):\n"
+                        "    return {'saved_book_id': book_id}\n"
+                    ),
                 ),
                 CodeFile(
                     path="frontend/src/App.jsx",
-                    purpose="Book search UI",
-                    content="export default function App() { return <main>Books</main>; }",
+                    purpose="Main application entry showing the book-search workflow",
+                    content=(
+                        "import BookSearch from './features/BookSearch.jsx';\n"
+                        "export default function App() { return <BookSearch />; }\n"
+                    ),
+                ),
+                CodeFile(
+                    path="frontend/src/features/BookSearch.jsx",
+                    purpose="Search the catalogue and add results to a reading list",
+                    content=(
+                        "import { useState } from 'react';\n"
+                        "export default function BookSearch() {\n"
+                        "  const [query, setQuery] = useState('');\n"
+                        "  const [books, setBooks] = useState([]);\n"
+                        "  const [error, setError] = useState('');\n"
+                        "  async function search() {\n"
+                        "    try {\n"
+                        "      const response = await fetch('/api/books?q=' + encodeURIComponent(query));\n"
+                        "      if (!response.ok) throw new Error('Search failed');\n"
+                        "      setBooks(await response.json()); setError('');\n"
+                        "    } catch (err) { setError(err.message); }\n"
+                        "  }\n"
+                        "  return <main><h1>Book Finder</h1><input value={query} onChange={e => setQuery(e.target.value)} />"
+                        "<button onClick={search}>Search</button>{error && <p role='alert'>{error}</p>}"
+                        "{books.map(book => <article key={book.id}>{book.title}</article>)}</main>;\n"
+                        "}\n"
+                    ),
                 ),
             ],
-            setup_notes=["Open the folder in Visual Studio Code."],
-            test_notes=["Run pytest before making a release."],
+            setup_notes=["Install backend and frontend dependencies."],
+            test_notes=["Run pytest and npm run build before release."],
             validation_warnings=[],
             validation_status="static_checks_clear",
             execution_status="not_executed",
@@ -158,7 +205,11 @@ class CodeGenerationRoutesTests(unittest.TestCase):
         bundle = response.json()["bundle"]
         self.assertEqual(bundle["bundle_version"], 1)
         self.assertEqual(bundle["execution_status"], "not_executed")
-        self.assertIn("backend/app/main.py", [item["path"] for item in bundle["files"]])
+        generated_paths = [item["path"] for item in bundle["files"]]
+        self.assertIn("backend/app/main.py", generated_paths)
+        self.assertIn("backend/app/routes/catalogue.py", generated_paths)
+        self.assertIn("frontend/src/App.jsx", generated_paths)
+        self.assertIn("frontend/src/features/BookSearch.jsx", generated_paths)
 
         downloaded = self.client.get(
             f"/api/v1/projects/{self.project_id}/code-bundles/{bundle['bundle_id']}/download"
@@ -167,14 +218,16 @@ class CodeGenerationRoutesTests(unittest.TestCase):
         self.assertIn("application/zip", downloaded.headers["content-type"])
         with ZipFile(BytesIO(downloaded.content)) as archive:
             self.assertIn("backend/app/main.py", archive.namelist())
+            self.assertIn("backend/app/routes/catalogue.py", archive.namelist())
             self.assertIn("frontend/src/App.jsx", archive.namelist())
+            self.assertIn("frontend/src/features/BookSearch.jsx", archive.namelist())
             self.assertNotIn("../outside.py", archive.namelist())
 
         detail = self.client.get(
             f"/api/v1/projects/{self.project_id}/code-bundles/{bundle['bundle_id']}"
         )
         self.assertEqual(detail.status_code, 200)
-        self.assertEqual(len(detail.json()["bundle"]["files"]), 2)
+        self.assertEqual(len(detail.json()["bundle"]["files"]), 4)
 
     def test_generation_requires_passed_technical_review(self):
         self._save_blueprint("FAIL")
