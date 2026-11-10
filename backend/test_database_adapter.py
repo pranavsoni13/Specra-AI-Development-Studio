@@ -73,6 +73,11 @@ class DatabaseAdapterTests(unittest.TestCase):
         self.assertIn("ON CONFLICT DO NOTHING", statement)
         self.assertIn("VALUES (%s)", statement)
 
+    def test_begin_immediate_is_translated_for_postgres_transactions(self):
+        statement, parameter = _translate_sql("BEGIN IMMEDIATE")
+        self.assertEqual(statement, "BEGIN")
+        self.assertIsNone(parameter)
+
     def test_foreign_key_pragma_is_ignored_for_postgres(self):
         statement, parameter = _translate_sql("PRAGMA foreign_keys = ON")
         self.assertEqual(statement, "SELECT 1")
