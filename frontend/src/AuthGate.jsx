@@ -281,8 +281,14 @@ export default function AuthGate({ children }) {
       try {
         const setupInfo = await apiRequest("/api/v1/auth/setup-status");
         setSetup(setupInfo);
+        setMode(
+          setupInfo.needs_bootstrap && setupInfo.bootstrap_configured
+            ? "bootstrap"
+            : "login",
+        );
       } catch {
         setSetup({ needs_bootstrap: false, bootstrap_configured: false });
+        setMode("login");
       }
       setStatus("unauthenticated");
     }
@@ -433,7 +439,7 @@ export default function AuthGate({ children }) {
           {activeMode === "storage-blocked"
             ? "Specra has paused account setup and sign-in to protect your data. The hosted PostgreSQL database is not configured yet. Set DATABASE_URL in the Render backend environment and redeploy; the setup token is not the problem."
             : activeMode === "bootstrap"
-              ? "Use the one-time setup token configured on the backend. The first account becomes the workspace administrator."
+              ? "This form is only for the first workspace administrator. Everyone else signs in or creates an account with their own email and password—no setup code."
               : activeMode === "register"
                 ? "Create your account with your name, email and password. No setup code is needed. You will be signed in automatically with Viewer access."
                 : "Sign in with your email and password. No setup code is needed for normal accounts."}
