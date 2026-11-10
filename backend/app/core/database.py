@@ -58,6 +58,11 @@ def persistent_storage_ready() -> bool:
 def _translate_sql(sql: str) -> tuple[str, str | None]:
     """Translate the small set of SQLite-specific statements Specra uses."""
     statement = sql.strip()
+    # SQLite reserves the write lock up front; PostgreSQL starts a transaction
+    # with BEGIN. Three existing stores use BEGIN IMMEDIATE for SQLite safety.
+    if re.fullmatch(r"BEGIN\s+IMMEDIATE", statement, re.IGNORECASE):
+        return "BEGIN", None
+
     if re.fullmatch(r"PRAGMA\s+foreign_keys\s*=\s*ON", statement, re.IGNORECASE):
         return "SELECT 1", None
 
