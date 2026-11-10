@@ -34,9 +34,15 @@ def using_postgres() -> bool:
 
 
 def persistent_storage_required() -> bool:
-    """Whether this deployment must use a shared database instead of local SQLite."""
-    value = os.getenv("REQUIRE_PERSISTENT_DATABASE", "").strip().casefold()
-    return value in {"1", "true", "yes", "on"}
+    """Require shared storage by default on Render/production, but keep local SQLite for development."""
+    configured = os.getenv("REQUIRE_PERSISTENT_DATABASE")
+    if configured is not None:
+        value = configured.strip().casefold()
+        return value in {"1", "true", "yes", "on"}
+
+    # Render's filesystem is ephemeral on Free web services. Do not let a
+    # missing Blueprint sync silently create a new, disposable SQLite admin DB.
+    return bool(os.getenv("RENDER")) or os.getenv("APP_ENV", "").strip().casefold() == "production"
 
 
 def persistent_storage_configured() -> bool:
