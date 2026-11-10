@@ -29,5 +29,7 @@ services:
         value: gemma4:cloud
       - key: SOFTWARE_ARCHITECT_MODEL
         value: gemma4:cloud
+      - key: CODE_GENERATION_MODEL
+        value: qwen3-coder:480b-cloud
       - key: TECHNICAL_REVIEWER_MODEL
         value: gemma4:cloud
