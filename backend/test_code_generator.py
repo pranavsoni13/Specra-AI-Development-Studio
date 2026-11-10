@@ -8,7 +8,8 @@ from pathlib import Path
 
 from unittest.mock import Mock, patch
 
-from app.agents.code_generator.agent import CodeGenerationAgent
+from app.agents.code_generator.agent import CodeGenerationAgent, _bounded_json
+from app.core.model_config import CODE_GENERATION_MODEL
 from app.agents.code_generator.quality import CodeGenerationQualityController
 from app.agents.code_generator.schemas import CodeBundleDraft, GeneratedFileDraft
 from app.core.code_bundle_store import CodeBundleStore
@@ -27,6 +28,19 @@ def draft(files, name="Book Finder"):
 
 
 class CodeGenerationAgentTests(unittest.TestCase):
+    def test_bounded_json_keeps_valid_json_when_context_is_too_large(self):
+        source = {
+            "requirements": [
+                {"description": "Search " + ("books " * 1000)}
+                for _ in range(30)
+            ],
+            "plan": {"milestones": [{"name": "Catalogue"} for _ in range(30)]},
+        }
+        encoded = _bounded_json(source, limit=300)
+        parsed = json.loads(encoded)
+        self.assertIsInstance(parsed, dict)
+        self.assertLessEqual(len(encoded), 300)
+
     def setUp(self):
         self.project = {
             "project_id": "book-project",
@@ -111,7 +125,9 @@ class CodeGenerationAgentTests(unittest.TestCase):
         agent = CodeGenerationAgent()
         bundle = agent.generate(project=self.project, artifacts=self.artifacts)
         kwargs = client_class.call_args.kwargs
-        self.assertEqual(kwargs["num_predict"], 12000)
+        self.assertEqual(kwargs["num_predict"], 20000)
+        self.assertEqual(kwargs["model_name"], CODE_GENERATION_MODEL)
+        self.assertEqual(agent.model_name, CODE_GENERATION_MODEL)
         self.assertFalse(kwargs["debug"])
         generated_paths = {item.path for item in bundle.files}
         self.assertIn("backend/app/routes/catalogue.py", generated_paths)
