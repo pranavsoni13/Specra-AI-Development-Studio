@@ -17,6 +17,7 @@ ROLE_VARIABLES = (
     "PROJECT_PLANNER_MODEL",
     "SOFTWARE_ARCHITECT_MODEL",
     "TECHNICAL_REVIEWER_MODEL",
+    "CODE_GENERATION_MODEL",
 )
 PROVIDER_ROLE_VARIABLES = tuple(
     f"{provider}_{role}"
@@ -46,6 +47,7 @@ class ProviderModelConfigTests(unittest.TestCase):
         self.assertEqual(config.PROJECT_PLANNER_MODEL, "qwen3:4b")
         self.assertEqual(config.SOFTWARE_ARCHITECT_MODEL, "qwen3:4b")
         self.assertEqual(config.TECHNICAL_REVIEWER_MODEL, "qwen3:4b")
+        self.assertEqual(config.CODE_GENERATION_MODEL, "qwen3-coder:480b-cloud")
 
     def test_xai_uses_hosted_default_not_ollama_model_ids(self):
         config = self._reload_with(
@@ -54,6 +56,14 @@ class ProviderModelConfigTests(unittest.TestCase):
         )
         self.assertEqual(config.REQUIREMENT_ANALYST_MODEL, "grok-4.7")
         self.assertEqual(config.PROJECT_PLANNER_MODEL, "grok-4.7")
+        self.assertEqual(config.CODE_GENERATION_MODEL, "grok-4.7")
+
+    def test_ollama_code_generation_model_can_be_overridden(self):
+        config = self._reload_with(
+            LLM_PROVIDER="ollama",
+            CODE_GENERATION_MODEL="qwen3-coder:480b-cloud",
+        )
+        self.assertEqual(config.CODE_GENERATION_MODEL, "qwen3-coder:480b-cloud")
 
     def test_xai_role_override_takes_precedence(self):
         config = self._reload_with(
@@ -75,6 +85,7 @@ class ProviderModelConfigTests(unittest.TestCase):
             config.SOFTWARE_ARCHITECT_MODEL,
             "anthropic/claude-3.5-sonnet",
         )
+        self.assertEqual(config.CODE_GENERATION_MODEL, "x-ai/grok-4.7")
 
     def test_invalid_provider_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "LLM_PROVIDER"):
