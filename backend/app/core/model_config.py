@@ -52,3 +52,11 @@ TECHNICAL_REVIEWER_MODEL: Final[str] = _configured_model(
     "qwen3:4b",
     "grok-4.7" if LLM_PROVIDER == "xai" else "x-ai/grok-4.7",
 )
+
+# Code bundles are larger than the blueprint/review responses. Use a dedicated
+# coding model by default, while allowing a provider-specific override.
+CODE_GENERATION_MODEL: Final[str] = _configured_model(
+    "CODE_GENERATION_MODEL",
+    "qwen3-coder:480b-cloud",
+    "grok-4.7" if LLM_PROVIDER == "xai" else "x-ai/grok-4.7",
+)
