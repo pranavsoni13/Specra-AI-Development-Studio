@@ -331,21 +331,8 @@ export default function AuthGate({ children }) {
         body: JSON.stringify(body),
       });
 
-      if (activeSubmitMode === "register") {
-        setNotice(
-          result.message ||
-          "Account created. You can sign in now. A project administrator must assign you to a project."
-        );
-        setMode("login");
-        setForm((current) => ({
-          ...current,
-          password: "",
-          display_name: "",
-          bootstrap_token: "",
-        }));
-        return;
-      }
-
+      // Public self-registration now establishes the normal session immediately.
+      // The bootstrap token is only sent by the first-admin setup form.
       setUser(result.user);
       setStatus("authenticated");
       setForm({ email: "", password: "", display_name: "", bootstrap_token: "" });
@@ -448,8 +435,8 @@ export default function AuthGate({ children }) {
             : activeMode === "bootstrap"
               ? "Use the one-time setup token configured on the backend. The first account becomes the workspace administrator."
               : activeMode === "register"
-                ? "Join Specra with a new account. New accounts start with Viewer access and need a project administrator to grant project access."
-                : "Sign in to your Specra workspace, or create an account if you are new here."}
+                ? "Create your account with your name, email and password. No setup code is needed. You will be signed in automatically with Viewer access."
+                : "Sign in with your email and password. No setup code is needed for normal accounts."}
         </p>
 
         {persistenceBlocked && (
