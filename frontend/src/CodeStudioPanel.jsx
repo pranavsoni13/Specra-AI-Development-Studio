@@ -78,8 +78,9 @@ export default function CodeStudioPanel({ projectId, onClose }) {
         }),
       });
       const metadata = result.bundle;
+      const generatedFileCount = metadata.files?.length || 0;
       setMessage(
-        `Code bundle v${metadata.bundle_version} saved. It has not been executed; review it in VS Code and run its tests.`,
+        `Code bundle v${metadata.bundle_version} saved with ${generatedFileCount} source files. Preview them below or download the ZIP. Generated code has not been executed; review it and run its tests before deployment.`,
       );
       await loadBundle(metadata.bundle_id);
       const refreshed = await apiRequest(baseUrl);
@@ -105,16 +106,17 @@ export default function CodeStudioPanel({ projectId, onClose }) {
           <div>
             <div className="auth-eyebrow">BLUEPRINT → CODE</div>
             <h2>Code Studio · Visual Studio Code</h2>
-            <p>Generate a versioned React + FastAPI starter bundle from your reviewed project blueprint.</p>
+            <p>Generate real project-specific React + FastAPI source files from your reviewed blueprint, preview each file, and download the complete project ZIP.</p>
           </div>
         </div>
         <button className="auth-secondary-button" onClick={onClose}>Close</button>
       </div>
 
       <div className="code-studio-notice">
-        <strong>Export, review, run.</strong> Specra creates source files and trusted VS Code launch/tasks configuration.
-        It does not execute generated source inside the Specra API process. Download the ZIP, open the folder in VS Code,
-        inspect the diff, install dependencies, run the included smoke tests, and add project-specific tests before deployment.
+        <strong>Generate files, preview, export.</strong> The coding model writes project-specific API routes, domain logic,
+        React screens, and supporting files. Every generated file appears in the source tree and can be previewed below.
+        Download the ZIP to get the actual folder and files on your device. Specra does not execute generated source inside
+        the API process; review it and run tests before deployment.
       </div>
 
       <div className="code-studio-controls">
@@ -150,13 +152,13 @@ export default function CodeStudioPanel({ projectId, onClose }) {
       ) : !history.length || !bundle ? (
         <div className="code-studio-empty">
           <strong>No code bundle generated yet.</strong>
-          <span>Run the engineering workflow and get a passing technical review first. Code generation then produces a ZIP with VS Code tasks and a backend smoke-test scaffold.</span>
+          <span>Complete the requirements, project plan, architecture, and passing technical review first. Then generate a project-specific React interface and FastAPI implementation. The generated files will appear here for preview and ZIP download.</span>
         </div>
       ) : (
         <>
           <div className="code-studio-bundle-summary">
             <div>
-              <div className="code-studio-version">BUNDLE v{bundle.bundle_version} · {bundle.stack}</div>
+              <div className="code-studio-version">BUNDLE v{bundle.bundle_version} · {bundle.stack} · {files.length} SOURCE FILES</div>
               <h3>{bundle.project_name}</h3>
               <p>{bundle.summary}</p>
               <div className="code-studio-statuses">
