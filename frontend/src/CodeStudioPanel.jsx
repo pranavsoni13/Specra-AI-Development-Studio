@@ -21,6 +21,8 @@ export default function CodeStudioPanel({ projectId, onClose }) {
   const [bundle, setBundle] = useState(null);
   const [myRole, setMyRole] = useState("");
   const [canGenerate, setCanGenerate] = useState(false);
+  const [generationReady, setGenerationReady] = useState(false);
+  const [generationBlockReason, setGenerationBlockReason] = useState("");
   const [constraints, setConstraints] = useState("");
   const [selectedPath, setSelectedPath] = useState("");
   const [loading, setLoading] = useState(true);
@@ -49,6 +51,8 @@ export default function CodeStudioPanel({ projectId, onClose }) {
       setHistory(result.bundles || []);
       setMyRole(result.my_role || "");
       setCanGenerate(Boolean(result.can_generate));
+      setGenerationReady(Boolean(result.generation_ready));
+      setGenerationBlockReason(result.generation_block_reason || "");
       if (result.bundles?.length) {
         await loadBundle(result.bundles[0].bundle_id);
       } else {
@@ -87,6 +91,8 @@ export default function CodeStudioPanel({ projectId, onClose }) {
       setHistory(refreshed.bundles || []);
       setMyRole(refreshed.my_role || "");
       setCanGenerate(Boolean(refreshed.can_generate));
+      setGenerationReady(Boolean(refreshed.generation_ready));
+      setGenerationBlockReason(refreshed.generation_block_reason || "");
     } catch (err) {
       setError(err.message || "Could not generate the code bundle.");
     } finally {
@@ -137,12 +143,37 @@ export default function CodeStudioPanel({ projectId, onClose }) {
             <p>Requires saved requirements, plan, architecture, and a passing technical review.</p>
           </div>
           {canGenerate && (
-            <button className="auth-primary-button" onClick={generate} disabled={generating || loading}>
-              {generating ? "Generating project files…" : history.length ? "Generate new code version" : "Generate VS Code project"}
+            <button
+              className="auth-primary-button"
+              onClick={generate}
+              disabled={generating || loading || !generationReady}
+              title={generationBlockReason || "Generate project-specific source files"}
+            >
+              {generating
+                ? "Generating project files…"
+                : !generationReady
+                  ? "Complete blueprint to enable generation"
+                  : history.length
+                    ? "Generate new code version"
+                    : "Generate VS Code project"}
             </button>
           )}
         </div>
       </div>
+
+      {!loading && generationBlockReason && (
+        <div className="code-studio-access-note" role="status">
+          <strong>{canGenerate ? "Generation not ready yet" : "Code generation access"}</strong>
+          <span>{generationBlockReason}</span>
+        </div>
+      )}
+
+      {!loading && !canGenerate && (
+        <div className="code-studio-access-note" role="note">
+          <strong>Read-only Code Studio</strong>
+          <span>Your role can view and download existing bundles, but cannot generate new source code. Ask the project administrator for an Analyst, Architect, Developer, or Owner role.</span>
+        </div>
+      )}
 
       {error && <p className="auth-error" role="alert">{error}</p>}
       {message && <p className="auth-success" role="status">{message}</p>}
