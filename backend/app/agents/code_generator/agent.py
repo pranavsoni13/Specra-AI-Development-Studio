@@ -49,7 +49,7 @@ def _missing_application_parts(files: list) -> list[str]:
     wired_router = any(
         "APIRouter" in source_by_path[path].content
         and re.search(
-            r"@\\w+\\.(?:get|post|put|patch|delete)\\s*\\(",
+            r"@\w+\.(?:get|post|put|patch|delete)\s*\(",
             source_by_path[path].content,
             re.IGNORECASE,
         )
@@ -216,7 +216,7 @@ class CodeGenerationAgent:
                 last_generation_error = exc
                 if attempt == 0:
                     prompt += (
-                        "\\n\\nCORRECTION REQUEST: Your previous response was not valid "
+                        "\n\nCORRECTION REQUEST: Your previous response was not valid "
                         "CodeBundleDraft JSON. Return one complete JSON object matching the "
                         "schema exactly. Keep the application concise, but include every "
                         "required source file and complete file contents."
@@ -233,9 +233,9 @@ class CodeGenerationAgent:
                 prompt += (
                     "\\n\\nCORRECTION REQUEST: Your previous draft was incomplete. "
                     "Regenerate the complete project source bundle and specifically fix "
-                    "these missing integration requirements:\\n- "
-                    + "\\n- ".join(missing_parts)
-                    + "\\nReturn the complete corrected JSON object, including all files."
+                    "these missing integration requirements:\n- "
+                    + "\n- ".join(missing_parts)
+                    + "\nReturn the complete corrected JSON object, including all files."
                 )
                 continue
             break
