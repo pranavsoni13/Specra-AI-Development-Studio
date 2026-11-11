@@ -17,6 +17,67 @@ def _dict(value: Any) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def _missing_application_parts(files: list) -> list[str]:
+    """Validate that the model supplied a wired API router and a rendered UI feature."""
+    source_by_path = {
+        PurePosixPath(item.path.strip()).as_posix().casefold(): item
+        for item in files
+    }
+    router_paths = [
+        path for path in source_by_path
+        if path.endswith(".py")
+        and (
+            path.startswith("backend/app/routes/")
+            or path.startswith("backend/app/api/routes/")
+        )
+        and not path.endswith("/__init__.py")
+    ]
+    ui_component_paths = [
+        path for path in source_by_path
+        if path.endswith((".jsx", ".tsx", ".js", ".ts"))
+        and (
+            path.startswith("frontend/src/components/")
+            or path.startswith("frontend/src/features/")
+        )
+    ]
+
+    main_entry = source_by_path.get("backend/app/main.py")
+    app_entry = source_by_path.get("frontend/src/app.jsx")
+    main_source = main_entry.content if main_entry else ""
+    app_source = app_entry.content if app_entry else ""
+
+    wired_router = any(
+        "APIRouter" in source_by_path[path].content
+        and re.search(
+            r"@\\w+\\.(?:get|post|put|patch|delete)\\s*\\(",
+            source_by_path[path].content,
+            re.IGNORECASE,
+        )
+        and "include_router" in main_source
+        and PurePosixPath(path).stem.casefold() in main_source.casefold()
+        for path in router_paths
+    )
+    wired_component = any(
+        len(source_by_path[path].content.strip()) >= 80
+        and "export" in source_by_path[path].content
+        and PurePosixPath(path).stem.casefold() in app_source.casefold()
+        for path in ui_component_paths
+    )
+
+    missing = []
+    if not wired_router:
+        missing.append(
+            "a project API module under backend/app/routes or backend/app/api/routes "
+            "with an APIRouter, an HTTP route, and registration in backend/app/main.py"
+        )
+    if not wired_component:
+        missing.append(
+            "a project React component under frontend/src/components or frontend/src/features "
+            "imported and rendered by frontend/src/App.jsx"
+        )
+    return missing
+
+
 def _bounded_json(value: Any, limit: int = 9000) -> str:
     """Return valid compact JSON; never cut a serialized object mid-brace."""
     def compact(node: Any, *, string_limit: int, list_limit: int, depth: int = 0):
@@ -138,88 +199,60 @@ class CodeGenerationAgent:
             ),
             constraints=(additional_constraints.strip() or "No additional constraints supplied.")[:5000],
         )
-        draft = self.client.generate_structured(
-            system_prompt=SYSTEM_PROMPT,
-            user_prompt=prompt,
-            output_schema=CodeBundleDraft,
-        )
-        # Require an integrated application, not just loose files or a validation report.
-        source_by_path = {
-            PurePosixPath(item.path.strip()).as_posix().casefold(): item
-            for item in draft.files
-        }
-        router_paths = [
-            path for path in source_by_path
-            if path.endswith(".py")
-            and (
-                path.startswith("backend/app/routes/")
-                or path.startswith("backend/app/api/routes/")
-            )
-            and not path.endswith("/__init__.py")
-        ]
-        ui_component_paths = [
-            path for path in source_by_path
-            if path.endswith((".jsx", ".tsx", ".js", ".ts"))
-            and (
-                path.startswith("frontend/src/components/")
-                or path.startswith("frontend/src/features/")
-            )
-        ]
-        main_entry = source_by_path.get("backend/app/main.py")
-        app_entry = source_by_path.get("frontend/src/app.jsx")
-
-        wired_router = False
-        main_source = main_entry.content if main_entry else ""
-        for path in router_paths:
-            module_name = PurePosixPath(path).stem.casefold()
-            router_source = source_by_path[path].content
-            has_api_router = "APIRouter" in router_source
-            has_http_route = bool(
-                re.search(
-                    r"@\w+\.(?:get|post|put|patch|delete)\s*\(",
-                    router_source,
-                    re.IGNORECASE,
+        last_generation_error = None
+        draft = None
+        for attempt in range(2):
+            try:
+                draft = self.client.generate_structured(
+                    system_prompt=SYSTEM_PROMPT,
+                    user_prompt=prompt,
+                    output_schema=CodeBundleDraft,
                 )
-            )
-            if (
-                has_api_router
-                and has_http_route
-                and "include_router" in main_source
-                and module_name in main_source.casefold()
-            ):
-                wired_router = True
+            except RuntimeError as exc:
+                # Retry once for malformed/truncated structured output. Provider
+                # authentication and connectivity errors should fail immediately.
+                if "failed the CodeBundleDraft schema" not in str(exc):
+                    raise
+                last_generation_error = exc
+                if attempt == 0:
+                    prompt += (
+                        "\\n\\nCORRECTION REQUEST: Your previous response was not valid "
+                        "CodeBundleDraft JSON. Return one complete JSON object matching the "
+                        "schema exactly. Keep the application concise, but include every "
+                        "required source file and complete file contents."
+                    )
+                    continue
                 break
 
-        wired_component = False
-        app_source = app_entry.content if app_entry else ""
-        for path in ui_component_paths:
-            component_name = PurePosixPath(path).stem
-            component_source = source_by_path[path].content
-            if (
-                len(component_source.strip()) >= 80
-                and "export" in component_source
-                and component_name.casefold() in app_source.casefold()
-            ):
-                wired_component = True
+            missing_parts = _missing_application_parts(draft.files)
+            if not missing_parts:
                 break
 
-        if not wired_router or not wired_component:
-            missing_parts = []
-            if not wired_router:
-                missing_parts.append(
-                    "a backend router imported and registered from backend/app/main.py"
+            last_generation_error = ValueError("; ".join(missing_parts))
+            if attempt == 0:
+                prompt += (
+                    "\\n\\nCORRECTION REQUEST: Your previous draft was incomplete. "
+                    "Regenerate the complete project source bundle and specifically fix "
+                    "these missing integration requirements:\\n- "
+                    + "\\n- ".join(missing_parts)
+                    + "\\nReturn the complete corrected JSON object, including all files."
                 )
-            if not wired_component:
-                missing_parts.append(
-                    "a project-specific React component imported and rendered from frontend/src/App.jsx"
-                )
+                continue
+            break
+
+        if draft is None or last_generation_error and _missing_application_parts(draft.files):
+            detail = (
+                str(last_generation_error)
+                if last_generation_error
+                else "The model returned no complete project bundle."
+            )
             raise ValueError(
-                "The model did not return a complete, integrated application. "
-                "No code bundle was saved. Missing: "
-                + "; ".join(missing_parts)
-                + ". Retry generation; if this keeps happening, configure a code-generation model "
-                "with enough output capacity. Specra will not report a generic scaffold as generated code."
-            )
+                "The coding model did not produce a complete, integrated application after one correction attempt. "
+                "No code bundle was saved. Missing or invalid output: "
+                + detail
+                + ". Check the configured code-generation model and its output capacity, then retry."
+            ) from last_generation_error
+
 
         # The active project name wins over any model-invented naming.
         if draft.project_name.strip() != project_name:
