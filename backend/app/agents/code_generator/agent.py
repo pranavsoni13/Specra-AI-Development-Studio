@@ -231,7 +231,7 @@ class CodeGenerationAgent:
             last_generation_error = ValueError("; ".join(missing_parts))
             if attempt == 0:
                 prompt += (
-                    "\\n\\nCORRECTION REQUEST: Your previous draft was incomplete. "
+                    "\n\nCORRECTION REQUEST: Your previous draft was incomplete. "
                     "Regenerate the complete project source bundle and specifically fix "
                     "these missing integration requirements:\n- "
                     + "\n- ".join(missing_parts)
