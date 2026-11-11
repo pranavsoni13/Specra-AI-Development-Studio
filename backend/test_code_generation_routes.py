@@ -192,6 +192,46 @@ class CodeGenerationRoutesTests(unittest.TestCase):
             execution_status="not_executed",
         )
 
+    def test_list_code_bundles_reports_generation_readiness(self):
+        response = self.client.get(
+            f"/api/v1/projects/{self.project_id}/code-bundles"
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertTrue(payload["can_generate"])
+        self.assertTrue(payload["generation_ready"])
+        self.assertIsNone(payload["generation_block_reason"])
+        self.assertEqual(payload["my_role"], "admin")
+
+    def test_list_code_bundles_explains_failed_technical_review(self):
+        self._save_blueprint("FAIL")
+        response = self.client.get(
+            f"/api/v1/projects/{self.project_id}/code-bundles"
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertTrue(payload["can_generate"])
+        self.assertFalse(payload["generation_ready"])
+        self.assertIn("technical review has not passed", payload["generation_block_reason"])
+
+    def test_provider_failure_returns_actionable_code_generation_error(self):
+        with patch(
+            "app.api.routes.code_generation.CodeGenerationAgent"
+        ) as agent_class:
+            agent = agent_class.return_value
+            agent.model_name = "qwen3-coder:480b-cloud"
+            agent.generate.side_effect = RuntimeError("provider unavailable")
+            response = self.client.post(
+                f"/api/v1/projects/{self.project_id}/code-bundles/generate",
+                json={"stack": "fastapi-react"},
+            )
+        self.assertEqual(response.status_code, 502, response.text)
+        detail = response.json()["detail"]
+        self.assertIn("ollama provider", detail)
+        self.assertIn("qwen3-coder:480b-cloud", detail)
+        self.assertIn("No files were saved", detail)
+        self.assertIn("backend deployment logs", detail)
+
     def test_generate_version_and_download_safe_zip(self):
         with patch(
             "app.api.routes.code_generation.CodeGenerationAgent.generate",
