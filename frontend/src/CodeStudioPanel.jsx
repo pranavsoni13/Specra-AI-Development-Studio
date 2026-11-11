@@ -161,7 +161,7 @@ export default function CodeStudioPanel({ projectId, onClose }) {
         </div>
       </div>
 
-      {!loading && generationBlockReason && (
+      {!loading && canGenerate && generationBlockReason && (
         <div className="code-studio-access-note" role="status">
           <strong>{canGenerate ? "Generation not ready yet" : "Code generation access"}</strong>
           <span>{generationBlockReason}</span>
