@@ -64,7 +64,7 @@ class CodeGenerationAgentTests(unittest.TestCase):
     def test_agent_uses_larger_generation_budget_and_returns_project_files(self, client_class):
         client = Mock()
         client_class.return_value = client
-        client.generate_structured.return_value = CodeBundleDraft(
+        valid_draft = CodeBundleDraft(
             project_name="Book Finder",
             summary="Search books and manage a personal reading list.",
             files=[
@@ -121,6 +121,16 @@ class CodeGenerationAgentTests(unittest.TestCase):
             setup_notes=["Install backend and frontend dependencies."],
             test_notes=["Add catalogue search tests."],
         )
+        client.generate_structured.side_effect = [
+            CodeBundleDraft(
+                project_name="Book Finder",
+                summary="A generic starter with only a health endpoint.",
+                files=[],
+                setup_notes=[],
+                test_notes=[],
+            ),
+            valid_draft,
+        ]
 
         agent = CodeGenerationAgent()
         bundle = agent.generate(project=self.project, artifacts=self.artifacts)
@@ -128,6 +138,8 @@ class CodeGenerationAgentTests(unittest.TestCase):
         self.assertEqual(kwargs["num_predict"], 20000)
         self.assertEqual(kwargs["model_name"], CODE_GENERATION_MODEL)
         self.assertEqual(agent.model_name, CODE_GENERATION_MODEL)
+        self.assertEqual(client.generate_structured.call_count, 2)
+        self.assertIn("CORRECTION REQUEST", client.generate_structured.call_args_list[-1].kwargs["user_prompt"])
         self.assertFalse(kwargs["debug"])
         generated_paths = {item.path for item in bundle.files}
         self.assertIn("backend/app/routes/catalogue.py", generated_paths)
