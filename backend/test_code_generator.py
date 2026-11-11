@@ -149,6 +149,7 @@ class CodeGenerationAgentTests(unittest.TestCase):
         agent = CodeGenerationAgent()
         with self.assertRaisesRegex(ValueError, "complete, integrated application"):
             agent.generate(project=self.project, artifacts=self.artifacts)
+        self.assertEqual(client.generate_structured.call_count, 2)
         self.assertFalse(hasattr(agent, "saved_bundle"))
 
     
