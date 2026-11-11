@@ -280,7 +280,7 @@ class CodeGenerationRoutesTests(unittest.TestCase):
                 json={"stack": "fastapi-react"},
             )
         self.assertEqual(response.status_code, 409, response.text)
-        self.assertIn("must pass", response.json()["detail"])
+        self.assertIn("has not passed", response.json()["detail"])
 
 
 if __name__ == "__main__":
