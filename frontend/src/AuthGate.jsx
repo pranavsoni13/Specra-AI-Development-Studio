@@ -281,11 +281,9 @@ export default function AuthGate({ children }) {
       try {
         const setupInfo = await apiRequest("/api/v1/auth/setup-status");
         setSetup(setupInfo);
-        setMode(
-          setupInfo.needs_bootstrap && setupInfo.bootstrap_configured
-            ? "bootstrap"
-            : "login",
-        );
+        // Keep ordinary visitors on the email/password login screen.
+        // First-admin bootstrap is an explicit, separate action below.
+        setMode("login");
       } catch {
         setSetup({ needs_bootstrap: false, bootstrap_configured: false });
         setMode("login");
@@ -451,9 +449,15 @@ export default function AuthGate({ children }) {
           </div>
         )}
 
-        {bootstrapBlocked && !persistenceBlocked && (
-          <div className="auth-notice">
-            The initial admin has not been created. Set <code>AUTH_BOOTSTRAP_TOKEN</code> in the backend environment, then refresh this page to initialize the workspace.
+        {setup.needs_bootstrap && !persistenceBlocked && (
+          <div className="auth-notice" role="status">
+            The workspace is waiting for its first administrator. Normal users do not need a setup code: the administrator must initialize the workspace once before anyone can register or sign in.
+          </div>
+        )}
+
+        {bootstrapBlocked && !persistenceBlocked && !setup.bootstrap_configured && (
+          <div className="auth-security-note">
+            First-admin setup is not configured on the server yet. Ask the workspace owner to finish the one-time setup.
           </div>
         )}
 
