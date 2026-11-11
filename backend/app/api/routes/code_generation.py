@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import zipfile
 from typing import Literal
 
@@ -35,6 +36,35 @@ def _project_or_404(project_id: str) -> dict:
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     return project
+
+
+def _generation_prerequisite_error(project_id: str) -> str | None:
+    """Return the human-readable reason code generation is not ready."""
+    artifacts = project_store.get_artifacts(project_id)
+    labels = {
+        "requirements": "requirements",
+        "project_plan": "project plan",
+        "architecture": "architecture",
+        "technical_review": "technical review",
+    }
+    missing = [labels[key] for key in labels if not artifacts.get(key)]
+    if missing:
+        return (
+            "Code generation is waiting for the approved blueprint. "
+            f"Complete and save: {', '.join(missing)}."
+        )
+
+    review = artifacts.get("technical_review") or {}
+    review_status = str(review.get("overall_status") or "").strip().upper()
+    if review_status != "PASS":
+        return (
+            "The latest technical review has not passed. Resolve its findings "
+            "and run the engineering workflow again before generating code."
+        )
+    return None
+
+
+GENERATION_ROLES = {"admin", "owner", "analyst", "architect", "developer"}
 
 
 def _public_bundle(bundle: dict, include_files: bool = False) -> dict:
@@ -79,12 +109,23 @@ def list_code_bundles(
 ) -> dict:
     _project_or_404(project_id)
     role = auth_store.get_project_role(project_id, user)
+    can_generate = role in GENERATION_ROLES
+    prerequisite_error = _generation_prerequisite_error(project_id) if can_generate else None
+    if not can_generate:
+        block_reason = (
+            f"Your project role is {role or 'unassigned'}. Code generation requires "
+            "an Admin, Owner, Analyst, Architect, or Developer project role. "
+            "Ask the project administrator to update your membership."
+        )
+    else:
+        block_reason = prerequisite_error
+
     return {
         "bundles": code_bundle_store.list_bundles(project_id),
         "my_role": role,
-        "can_generate": role in {
-            "admin", "owner", "analyst", "architect", "developer",
-        },
+        "can_generate": can_generate,
+        "generation_ready": can_generate and prerequisite_error is None,
+        "generation_block_reason": block_reason,
     }
 
 
@@ -101,30 +142,16 @@ def generate_code_bundle(
     user: dict = Depends(get_current_user),
 ) -> dict:
     project = _project_or_404(project_id)
+    prerequisite_error = _generation_prerequisite_error(project_id)
+    if prerequisite_error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=prerequisite_error,
+        )
+
     artifacts = project_store.get_artifacts(project_id)
-    missing = [
-        stage
-        for stage in ("requirements", "project_plan", "architecture", "technical_review")
-        if not artifacts.get(stage)
-    ]
-    if missing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Generate and save the complete engineering blueprint before generating code. "
-                f"Missing artifacts: {', '.join(missing)}."
-            ),
-        )
-
-    review = artifacts.get("technical_review") or {}
-    review_status = str(review.get("overall_status") or "").strip().upper()
-    if review_status != "PASS":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="The latest technical review must pass before code generation. Resolve its findings and run the workflow again.",
-        )
-
     test_suite = test_store.get_suite(project_id)
+    agent = None
     try:
         agent = CodeGenerationAgent()
         bundle = agent.generate(
@@ -145,14 +172,27 @@ def generate_code_bundle(
             detail=str(exc),
         ) from exc
     except Exception as exc:
+        provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower() or "ollama"
+        model_name = (
+            agent.model_name
+            if agent is not None
+            else os.getenv("CODE_GENERATION_MODEL", "configured default").strip()
+        )
         logger.exception(
-            "Code bundle generation failed for project %s (%s)",
+            "Code bundle generation failed for project %s using %s/%s (%s)",
             project_id,
+            provider,
+            model_name,
             type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="The code-generation agent could not produce a safe bundle. Check the configured provider and try again.",
+            detail=(
+                f"Code generation failed using the {provider} provider and model "
+                f"'{model_name}' ({type(exc).__name__}). No files were saved. "
+                "Check the backend deployment logs and verify the provider key, "
+                "model name, and provider connectivity."
+            ),
         ) from exc
 
     return {"bundle": _public_bundle(saved)}
