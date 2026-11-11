@@ -163,6 +163,24 @@ class AuthRouteTests(unittest.TestCase):
 
 
 
+    def test_normal_login_does_not_require_bootstrap_token(self):
+        self.bootstrap_admin()
+        self.client.post("/api/v1/auth/logout")
+
+        # The bootstrap credential is not part of normal authentication.
+        with patch.dict(os.environ, {"AUTH_BOOTSTRAP_TOKEN": ""}, clear=False):
+            login = self.client.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": "admin@example.com",
+                    "password": "admin-password-long",
+                },
+            )
+
+        self.assertEqual(login.status_code, 200, login.text)
+        self.assertEqual(login.json()["user"]["role"], "admin")
+        self.assertIn("specra_session=", login.headers.get("set-cookie", ""))
+
     def test_public_registration_creates_viewer_but_does_not_grant_existing_projects(self):
         self.bootstrap_admin()
         project = self.client.post(
