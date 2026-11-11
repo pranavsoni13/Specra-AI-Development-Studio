@@ -6282,3 +6282,27 @@ button:disabled {
   font-size: 12px;
   line-height: 1.5;
 }
+
+.code-studio-access-note {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #334155);
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.38);
+  color: var(--text, #e2e8f0);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.code-studio-access-note strong {
+  font-size: 12px;
+  font-weight: 750;
+}
+.code-studio-access-note span {
+  color: var(--muted, #a8b5ca);
+}
+.code-studio-generate-row .auth-primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
