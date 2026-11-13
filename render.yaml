@@ -13,9 +13,12 @@ services:
         value: 3.11.11
       - key: AUTH_BOOTSTRAP_TOKEN
         sync: false
+      # Set this in the Render dashboard to a durable PostgreSQL connection URI.
       - key: DATABASE_URL
         sync: false
       - key: REQUIRE_PERSISTENT_DATABASE
+        value: "true"
+      - key: AUTH_COOKIE_SECURE
         value: "true"
       - key: ALLOW_PUBLIC_SIGNUP
         value: "true"

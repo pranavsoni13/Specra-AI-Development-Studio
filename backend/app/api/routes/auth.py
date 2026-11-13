@@ -115,16 +115,21 @@ def _new_session(response: Response, user: dict) -> dict:
 
 @router.get("/setup-status")
 def get_setup_status() -> dict:
+    # Public setup discovery; this never requires an administrator session.
     configured = bool(os.getenv("AUTH_BOOTSTRAP_TOKEN", "").strip())
     needs_bootstrap = auth_store.user_count() == 0
+    storage_configured = persistent_storage_configured()
+    storage_required = persistent_storage_required()
+    storage_ready = persistent_storage_ready()
     return {
         "needs_bootstrap": needs_bootstrap,
         "bootstrap_configured": configured if needs_bootstrap else False,
         "public_signup_enabled": (
-            not needs_bootstrap and _public_signup_enabled()
+            not needs_bootstrap and _public_signup_enabled() and storage_ready
         ),
-        "persistent_storage_required": persistent_storage_required(),
-        "persistent_storage_configured": persistent_storage_configured(),
+        "persistent_storage_required": storage_required,
+        "persistent_storage_configured": storage_configured,
+        "persistent_storage_ready": storage_ready,
     }
 
 
@@ -145,26 +150,21 @@ def bootstrap_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid setup token.",
         )
-    if auth_store.user_count() > 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Initial administrator already exists. Ask an administrator to create your account.",
-        )
 
+    # Atomic creation ensures concurrent first-run requests cannot create
+    # separate administrator accounts.
     try:
-        user = auth_store.create_user(
+        user = auth_store.create_first_admin(
             email=str(request.email),
             display_name=request.display_name,
             password=request.password,
-            role="admin",
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        message = str(exc)
+        code = 409 if ("already exists" in message or "already initialized" in message) else 400
+        raise HTTPException(status_code=code, detail=message) from exc
 
-    # Legacy projects without an owner are claimed only during the explicit
-    # first-admin bootstrap, not by arbitrary sign-ups.
     from app.core.storage.project_store import project_store
-
     project_store.claim_unowned_projects(user["user_id"])
     public = _new_session(response, user)
     return {"user": public, "message": "Administrator account created."}

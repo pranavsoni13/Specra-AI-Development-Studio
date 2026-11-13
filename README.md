@@ -182,4 +182,4 @@ The feature pull request adds the capabilities below on top of the existing prov
 
 The authenticated workspace is present on `main` and the frontend deploys from that branch. For hosted multi-user data, set a durable PostgreSQL `DATABASE_URL` and `AUTH_COOKIE_SECURE=true` in the backend environment before initializing the first admin. `AUTH_BOOTSTRAP_TOKEN` is only for first-admin bootstrap and is not part of routine signup/login. Never commit database URLs, bootstrap tokens, or provider keys. A green frontend deployment alone does not prove live backend configuration.
 
-Self-registration is not email-verified in this iteration. Viewer accounts cannot read private projects unless explicitly assigned to a project.
+Self-registration is not email-verified in this iteration. Viewer accounts cannot read private projects unless explicitly assigned to a project. First-admin bootstrap is a one-time server-side operation and is not part of routine signup or login.

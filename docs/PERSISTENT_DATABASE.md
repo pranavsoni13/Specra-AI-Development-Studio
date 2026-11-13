@@ -12,6 +12,8 @@ Specra uses SQLite by default for local development. Render Free web services ha
 6. Save the environment change and wait for Render to finish deploying the backend.
 7. Open `https://specra-ai-development-studio.vercel.app`. The new PostgreSQL database will initially be empty, so initialize the first admin once in this database using the current `AUTH_BOOTSTRAP_TOKEN` value from Render. Once created, logins and projects should survive backend restarts because the records are stored in PostgreSQL.
 
+The bootstrap route is strictly one-time: the database transaction only permits one first administrator. The token is not used for ordinary login or account creation.
+
 After the first admin exists, ordinary people do not need the bootstrap token. With `ALLOW_PUBLIC_SIGNUP=true`, they can choose **New to Specra? Create an account**, make their own credentials, and sign in. New signups start as Viewers and need an administrator to assign project membership.
 
 ## Important notes
