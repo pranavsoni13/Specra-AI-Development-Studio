@@ -5,6 +5,7 @@ so they never read or mutate a developer's normal project database.
 """
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -60,6 +61,55 @@ class AuthRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(response.json()["user"]["role"], "admin")
         return response
+
+    def test_bootstrap_is_atomic_and_only_one_admin_can_be_created(self):
+        payloads = [
+            {
+                "bootstrap_token": "test-bootstrap-secret-not-real",
+                "email": f"admin-{index}@example.com",
+                "display_name": f"Specra Admin {index}",
+                "password": "admin-password-long",
+            }
+            for index in (1, 2)
+        ]
+
+        def attempt_bootstrap(payload):
+            with TestClient(app) as client:
+                return client.post("/api/v1/auth/bootstrap", json=payload)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(attempt_bootstrap, payloads))
+
+        self.assertEqual(sorted(response.status_code for response in responses), [201, 409])
+        self.assertEqual(auth_store.user_count(), 1)
+        self.assertEqual(auth_store.list_users()[0]["role"], "admin")
+
+    def test_viewer_can_login_after_admin_is_signed_out_without_bootstrap_secret(self):
+        self.bootstrap_admin()
+        self.client.post("/api/v1/auth/logout")
+
+        registered = self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "independent-user@example.com",
+                "display_name": "Independent User",
+                "password": "independent-user-password",
+            },
+        )
+        self.assertEqual(registered.status_code, 201, registered.text)
+        self.client.post("/api/v1/auth/logout")
+
+        with patch.dict(os.environ, {"AUTH_BOOTSTRAP_TOKEN": ""}, clear=False):
+            login = self.client.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": "independent-user@example.com",
+                    "password": "independent-user-password",
+                },
+            )
+
+        self.assertEqual(login.status_code, 200, login.text)
+        self.assertEqual(login.json()["user"]["role"], "viewer")
 
     def test_project_api_rejects_anonymous_and_bootstrap_creates_admin(self):
         anonymous = self.client.get("/api/v1/projects")
