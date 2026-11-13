@@ -257,6 +257,9 @@ export default function AuthGate({ children }) {
   const [setup, setSetup] = useState({
     needs_bootstrap: false,
     bootstrap_configured: false,
+    persistent_storage_required: false,
+    persistent_storage_configured: true,
+    persistent_storage_ready: true,
   });
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({
@@ -285,7 +288,7 @@ export default function AuthGate({ children }) {
         // First-admin bootstrap is an explicit, separate action below.
         setMode("login");
       } catch {
-        setSetup({ needs_bootstrap: false, bootstrap_configured: false });
+        setSetup({ needs_bootstrap: false, bootstrap_configured: false, persistent_storage_required: true, persistent_storage_configured: false, persistent_storage_ready: false });
         setMode("login");
       }
       setStatus("unauthenticated");
@@ -362,7 +365,7 @@ export default function AuthGate({ children }) {
     try {
       setSetup(await apiRequest("/api/v1/auth/setup-status"));
     } catch {
-      setSetup({ needs_bootstrap: false, bootstrap_configured: false });
+      setSetup({ needs_bootstrap: false, bootstrap_configured: false, persistent_storage_required: true, persistent_storage_configured: false, persistent_storage_ready: false });
     }
   }
 
@@ -403,7 +406,7 @@ export default function AuthGate({ children }) {
     );
   }
 
-  const persistenceBlocked = setup.persistent_storage_required && !setup.persistent_storage_configured;
+  const persistenceBlocked = setup.persistent_storage_ready === false || (setup.persistent_storage_required && !setup.persistent_storage_configured);
   const showBootstrap = setup.needs_bootstrap && setup.bootstrap_configured && !persistenceBlocked;
   const bootstrapBlocked = persistenceBlocked || (setup.needs_bootstrap && !setup.bootstrap_configured);
   // Keep the account-creation entry point visible after bootstrap. If public
@@ -451,7 +454,7 @@ export default function AuthGate({ children }) {
 
         {setup.needs_bootstrap && !persistenceBlocked && (
           <div className="auth-notice" role="status">
-            The workspace is waiting for its first administrator. Normal users do not need a setup code: the administrator must initialize the workspace once before anyone can register or sign in.
+            The workspace is waiting for its first administrator. The workspace owner must complete the one-time initialization; after that, anyone can register with their own credentials.
           </div>
         )}
 
