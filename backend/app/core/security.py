@@ -173,6 +173,47 @@ class AuthStore:
             "created_at": row["created_at"],
         }
 
+    def create_first_admin(
+        self,
+        *,
+        email: str,
+        display_name: str,
+        password: str,
+    ) -> dict:
+        """Create the single initial admin under a serialized transaction."""
+        normalized_email = email.strip().casefold()
+        normalized_name = display_name.strip()
+        if not normalized_email or "@" not in normalized_email:
+            raise ValueError("Enter a valid email address.")
+        if not normalized_name:
+            raise ValueError("Display name cannot be empty.")
+
+        encoded_password = hash_password(password)
+        user_id = secrets.token_hex(16)
+        try:
+            with self._connect() as connection:
+                # PostgreSQL advisory xact lock serializes all app workers.
+                # SQLite BEGIN IMMEDIATE acquires the write lock before count.
+                if hasattr(connection, "_connection"):
+                    connection.execute("SELECT pg_advisory_xact_lock(728194201)")
+                else:
+                    connection.execute("BEGIN IMMEDIATE")
+                count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+                if count:
+                    raise ValueError("Initial administrator already initialized.")
+                connection.execute(
+                    """
+                    INSERT INTO users (
+                        user_id, email, display_name, password_hash,
+                        role, is_active, created_at
+                    ) VALUES (?, ?, ?, ?, 'admin', 1, ?)
+                    """,
+                    (user_id, normalized_email, normalized_name, encoded_password, _now_text()),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("An account with this email already exists.") from exc
+        return self.get_user_by_id(user_id)
+
     def create_user(
         self,
         *,
