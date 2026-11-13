@@ -288,7 +288,11 @@ export default function AuthGate({ children }) {
         // First-admin bootstrap is an explicit, separate action below.
         setMode("login");
       } catch {
-        setSetup({ needs_bootstrap: false, bootstrap_configured: false, persistent_storage_required: true, persistent_storage_configured: false, persistent_storage_ready: false });
+        setSetup({
+          needs_bootstrap: false,
+          bootstrap_configured: false,
+          backend_unavailable: true,
+        });
         setMode("login");
       }
       setStatus("unauthenticated");
@@ -365,7 +369,11 @@ export default function AuthGate({ children }) {
     try {
       setSetup(await apiRequest("/api/v1/auth/setup-status"));
     } catch {
-      setSetup({ needs_bootstrap: false, bootstrap_configured: false, persistent_storage_required: true, persistent_storage_configured: false, persistent_storage_ready: false });
+      setSetup({
+          needs_bootstrap: false,
+          bootstrap_configured: false,
+          backend_unavailable: true,
+        });
     }
   }
 
@@ -406,7 +414,11 @@ export default function AuthGate({ children }) {
     );
   }
 
-  const persistenceBlocked = setup.persistent_storage_ready === false || (setup.persistent_storage_required && !setup.persistent_storage_configured);
+  const serviceUnavailable = setup.backend_unavailable === true;
+  const persistenceBlocked = !serviceUnavailable && (
+    setup.persistent_storage_ready === false ||
+    (setup.persistent_storage_required && !setup.persistent_storage_configured)
+  );
   const showBootstrap = setup.needs_bootstrap && setup.bootstrap_configured && !persistenceBlocked;
   const bootstrapBlocked = persistenceBlocked || (setup.needs_bootstrap && !setup.bootstrap_configured);
   // Keep the account-creation entry point visible after bootstrap. If public
@@ -414,9 +426,11 @@ export default function AuthGate({ children }) {
   // making the option disappear from the signed-out screen.
   const workspaceInitialized = !setup.needs_bootstrap;
   // Older local backend instances may omit this field; the backend default is enabled.
-  const registrationEnabled = setup.public_signup_enabled !== false && !persistenceBlocked;
-  const activeMode = persistenceBlocked
-    ? "storage-blocked"
+  const registrationEnabled = setup.public_signup_enabled !== false && !persistenceBlocked && !serviceUnavailable;
+  const activeMode = serviceUnavailable
+    ? "unavailable"
+    : persistenceBlocked
+      ? "storage-blocked"
     : showBootstrap && mode === "bootstrap"
       ? "bootstrap"
       : workspaceInitialized && registrationEnabled && mode === "register"
@@ -434,17 +448,25 @@ export default function AuthGate({ children }) {
           </div>
         </div>
 
-        <div className="auth-eyebrow">{activeMode === "storage-blocked" ? "SETUP PAUSED" : activeMode === "bootstrap" ? "INITIAL SETUP" : activeMode === "register" ? "CREATE ACCOUNT" : "SECURE WORKSPACE"}</div>
-        <h1>{activeMode === "storage-blocked" ? "Connect persistent storage" : activeMode === "bootstrap" ? "Create the first admin" : activeMode === "register" ? "Create your account" : "Welcome back"}</h1>
+        <div className="auth-eyebrow">{serviceUnavailable ? "SERVICE UNAVAILABLE" : activeMode === "storage-blocked" ? "SETUP PAUSED" : activeMode === "bootstrap" ? "INITIAL SETUP" : activeMode === "register" ? "CREATE ACCOUNT" : "SECURE WORKSPACE"}</div>
+        <h1>{serviceUnavailable ? "Can't reach Specra" : activeMode === "storage-blocked" ? "Connect persistent storage" : activeMode === "bootstrap" ? "Create the first admin" : activeMode === "register" ? "Create your account" : "Welcome back"}</h1>
         <p className="auth-intro">
-          {activeMode === "storage-blocked"
-            ? "Specra has paused account setup and sign-in to protect your data. The hosted PostgreSQL database is not configured yet. Set DATABASE_URL in the Render backend environment and redeploy; the setup token is not the problem."
+          {serviceUnavailable
+            ? "The Specra API did not respond. Check the backend deployment and try again; this does not mean your account or database has been erased."
+            : activeMode === "storage-blocked"
+              ? "Specra has paused account setup and sign-in to protect your data. The hosted PostgreSQL database is not configured yet. Set DATABASE_URL in the Render backend environment and redeploy; the setup token is not the problem."
             : activeMode === "bootstrap"
               ? "This form is only for the first workspace administrator. Everyone else signs in or creates an account with their own email and password—no setup code."
               : activeMode === "register"
                 ? "Create your account with your name, email and password. No setup code is needed. You will be signed in automatically with Viewer access."
                 : "Sign in with your email and password. No setup code is needed for normal accounts."}
         </p>
+
+        {serviceUnavailable && (
+          <div className="auth-notice" role="alert">
+            The backend is currently unreachable. Refresh this page after the service is available.
+          </div>
+        )}
 
         {persistenceBlocked && (
           <div className="auth-notice" role="alert">
@@ -464,7 +486,7 @@ export default function AuthGate({ children }) {
           </div>
         )}
 
-        {!persistenceBlocked && (
+        {!persistenceBlocked && !serviceUnavailable && (
         <form className="auth-login-form" onSubmit={submit}>
           {(activeMode === "bootstrap" || activeMode === "register") && (
             <>
