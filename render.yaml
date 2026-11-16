@@ -22,17 +22,27 @@ services:
         value: "true"
       - key: ALLOW_PUBLIC_SIGNUP
         value: "true"
+      # Production LLM provider. Keep the API key as a secret in Render.
+      - key: LLM_PROVIDER
+        value: openrouter
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_APP_NAME
+        value: SPECRA
+      - key: OPENROUTER_SITE_URL
+        value: https://specra-ai-development-studio.vercel.app
+      - key: OPENROUTER_REQUIREMENT_ANALYST_MODEL
+        value: openai/gpt-4o
+      - key: OPENROUTER_PROJECT_PLANNER_MODEL
+        value: openai/gpt-4o
+      - key: OPENROUTER_SOFTWARE_ARCHITECT_MODEL
+        value: openai/gpt-4o
+      - key: OPENROUTER_TECHNICAL_REVIEWER_MODEL
+        value: openai/gpt-4o
+      - key: OPENROUTER_CODE_GENERATION_MODEL
+        value: openai/gpt-4o
+      # Optional Ollama credentials remain available for local/development use.
       - key: OLLAMA_HOST
         value: https://ollama.com
       - key: OLLAMA_API_KEY
         sync: false
-      - key: REQUIREMENT_ANALYST_MODEL
-        value: gemma4:cloud
-      - key: PROJECT_PLANNER_MODEL
-        value: gemma4:cloud
-      - key: SOFTWARE_ARCHITECT_MODEL
-        value: gemma4:cloud
-      - key: CODE_GENERATION_MODEL
-        value: qwen3-coder:480b-cloud
-      - key: TECHNICAL_REVIEWER_MODEL
-        value: gemma4:cloud
