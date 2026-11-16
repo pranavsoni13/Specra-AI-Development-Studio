@@ -2,10 +2,7 @@ import json
 from typing import Any
 
 from app.agents.project_copilot.prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
-from app.agents.project_copilot.schemas import (
-    CopilotAnswerDraft,
-    CopilotChangeProposal,
-)
+from app.agents.project_copilot.schemas import CopilotAnswerDraft
 from app.core.llm.client import LocalLLMClient
 from app.core.model_config import TECHNICAL_REVIEWER_MODEL
 
@@ -17,6 +14,11 @@ ARTIFACT_TITLES = {
     "technical_review": "Technical review",
     "rag_validation": "RAG validation",
 }
+
+# Copilot is a conversational feature. Keep its output-token ceiling below
+# OpenRouter's credit affordability threshold observed in production logs.
+# Other agents retain the shared client's larger default budget.
+COPILOT_MAX_OUTPUT_TOKENS = 1800
 
 
 def _as_dict(value: Any) -> dict:
@@ -39,7 +41,10 @@ class ProjectCopilotAgent:
 
     def __init__(self, model_name: str = TECHNICAL_REVIEWER_MODEL):
         self.model_name = model_name
-        self.client = LocalLLMClient(model_name=model_name)
+        self.client = LocalLLMClient(
+            model_name=model_name,
+            num_predict=COPILOT_MAX_OUTPUT_TOKENS,
+        )
 
     @staticmethod
     def build_sources(
@@ -143,7 +148,7 @@ class ProjectCopilotAgent:
         if draft.source_refs and len(accepted_refs) != len(set(draft.source_refs)):
             answer = draft.answer.rstrip()
             answer += (
-                "\n\nNote: One or more model-suggested source references were "
+                "\\n\\nNote: One or more model-suggested source references were "
                 "discarded because they were not in the supplied project catalogue."
             )
         else:
