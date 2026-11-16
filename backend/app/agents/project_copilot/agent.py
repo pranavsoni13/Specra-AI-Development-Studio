@@ -148,7 +148,7 @@ class ProjectCopilotAgent:
         if draft.source_refs and len(accepted_refs) != len(set(draft.source_refs)):
             answer = draft.answer.rstrip()
             answer += (
-                "\\n\\nNote: One or more model-suggested source references were "
+                "\n\nNote: One or more model-suggested source references were "
                 "discarded because they were not in the supplied project catalogue."
             )
         else:
